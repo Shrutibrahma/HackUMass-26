@@ -342,7 +342,6 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
     const c = call.analysis?.chips ?? []
     return draft?.source === 'rest' ? ['Say the rest', ...c.slice(0, 2)] : c
   }, [call.analysis, draft])
-  const selectedMode = COMMUNICATION_MODES.find((option) => option.id === communicationMode) ?? COMMUNICATION_MODES[0]
   const cameraActive = cameraOn || communicationMode === 'sign_language'
   const cameraCaption = signing?.length ? signing.map(pretty).join(' ') : call.draft?.source === 'signs' ? call.draft.text : ''
 
@@ -524,18 +523,17 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
         {COMMUNICATION_MODES.map((option) => (
           <button key={option.id} role="radio" aria-checked={communicationMode === option.id}
             className={communicationMode === option.id ? 'on' : ''}
-            onClick={() => { setCommunicationMode(option.id); setPreparedDraft(null); setText(''); setMode('idle') }}>
-            {option.id === 'sign_language' ? <Hand size={15} /> : option.id === 'exact_words' ? <Keyboard size={15} /> : option.id === 'captions_only' ? <span aria-hidden>CC</span> : <span aria-hidden>✦</span>}
-            {option.label}
+            onClick={() => { setCommunicationMode(option.id); setPreparedDraft(null); setText(''); setMode('idle') }}
+            title={option.hint} aria-label={option.label}>
+            {({ ai_assist: '✦ AI', sign_language: 'Sign', exact_words: 'Exact', captions_only: 'Captions' } as const)[option.id]}
           </button>
         ))}
       </div>
-      <div className="mode-hint"><b>{selectedMode.label}</b><span>{selectedMode.hint}</span></div>
       <div className="call-controls" aria-label="Call controls">
-        <button className={muted ? 'on' : ''} onClick={() => setMuted(!muted)} aria-pressed={muted}><Mic size={20} /><span>{muted ? 'Muted' : 'Mute'}</span></button>
-        <button className={speaker ? 'on' : ''} onClick={() => setSpeaker(!speaker)} aria-pressed={speaker}><span className="speaker-glyph" aria-hidden>◖))</span><span>Speaker</span></button>
-        <button className={keypadOpen ? 'on' : ''} onClick={() => setKeypadOpen(!keypadOpen)} aria-pressed={keypadOpen}><Grid size={20} /><span>Keypad</span></button>
-        <button className={cameraOn ? 'on' : ''} onClick={() => setCameraOn(!cameraOn)} aria-pressed={cameraOn}><VideoIcon size={20} /><span>Camera</span></button>
+        <button className={muted ? 'on' : ''} onClick={() => setMuted(!muted)} aria-pressed={muted} aria-label={muted ? 'Unmute' : 'Mute'} title={muted ? 'Unmute' : 'Mute'}><Mic size={20} /></button>
+        <button className={speaker ? 'on' : ''} onClick={() => setSpeaker(!speaker)} aria-pressed={speaker} aria-label="Speaker" title="Speaker"><span className="speaker-glyph" aria-hidden>◖))</span></button>
+        <button className={keypadOpen ? 'on' : ''} onClick={() => setKeypadOpen(!keypadOpen)} aria-pressed={keypadOpen} aria-label="Keypad" title="Keypad"><Grid size={20} /></button>
+        <button className={cameraActive ? 'on' : ''} onClick={() => { const on = !cameraActive; setCameraOn(on); setCommunicationMode(on ? 'sign_language' : 'ai_assist'); setPreparedDraft(null); setMode('idle') }} aria-pressed={cameraActive} aria-label={cameraActive ? 'Turn camera off' : 'Turn camera on (Sign mode)'} title="Camera (Sign mode)"><VideoIcon size={20} /></button>
       </div>
       {reconnecting && <div className="banner" role="status"><i /><b>Reconnecting...</b> The call is still going.</div>}
       {call.notice && call.notice.kind !== 'reconnecting' && (
