@@ -163,6 +163,14 @@ export default function App() {
           }}
           onInPerson={() => setRoute({ name: 'inperson' })}
           onShow={() => setRoute({ name: 'show' })}
+          onVideo={async () => {
+            // Open the tab synchronously so pop-up blockers allow it, then point it at the new room.
+            const w = window.open('about:blank', '_blank')
+            try {
+              const r = await post<{ room: string; host_url: string }>('/api/rooms', {})
+              if (w) w.location.href = r.host_url; else location.href = r.host_url
+            } catch (e: any) { w?.close(); alert(e.message) }
+          }}
           onSettings={() => setRoute({ name: 'settings' })} />
     }
   }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs])

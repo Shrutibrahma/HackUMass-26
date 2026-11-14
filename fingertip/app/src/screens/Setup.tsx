@@ -81,6 +81,7 @@ type HomeProps = {
   onInPerson: () => void
   onSettings: () => void
   onShow?: () => void
+  onVideo?: () => void
   tabs?: React.ReactNode
 }
 
@@ -97,7 +98,7 @@ export function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   )
 }
 
-export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, onSettings, onShow, tabs }: HomeProps) {
+export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, onSettings, onShow, onVideo, tabs }: HomeProps) {
   const [sheet, setSheet] = useState<'pad' | 'new' | null>(null)
   const favs = contacts.filter((c) => c.fav)
   const find = (r: Recent) => contacts.find((c) => c.id === r.contactId)
@@ -129,6 +130,12 @@ export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, on
           <span className="ico"><People size={22} /></span>
           <span><b>Talk in person</b><small>Flip your phone so they can read</small></span>
         </button>
+        {onVideo && (
+          <button className="cardbox tip" onClick={onVideo}>
+            <span className="ico"><VideoIcon size={22} /></span>
+            <span><b>Video call with captions</b><small>Send a link. They join in any browser, no app.</small></span>
+          </button>
+        )}
         {onShow && (
           <button className="cardbox tip" onClick={onShow}>
             <span className="ico"><VideoIcon size={22} /></span>
