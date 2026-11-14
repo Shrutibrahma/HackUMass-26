@@ -4,7 +4,8 @@
   if (window.__fingertipMeetingCaptions) return
   window.__fingertipMeetingCaptions = true
 
-  const platform = location.hostname === 'meet.google.com' ? 'Google Meet' : 'Zoom Web'
+  const platform = location.hostname === 'meet.google.com' ? 'Google Meet'
+    : /zoom\.us$/.test(location.hostname) ? 'Zoom Web' : 'Test meeting'
   const state = {
     server: 'http://localhost:8000',
     panel: null,
@@ -12,6 +13,13 @@
     input: null,
     draft: null,
     mode: 'ai',
+    burn: true,
+    wrapped: null,
+  }
+
+  /** Draw a caption into my outgoing camera (inject.js). Everyone in the meeting sees it. */
+  function burn(text, final = true) {
+    window.postMessage({ fingertip: 'caption', text, final }, '*')
   }
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -37,10 +45,10 @@
     const text = clean(value)
     if (!text) return ''
     try {
-      const response = await fetch(`${state.server}/api/signs/sentence`, {
+      const response = await fetch(`${state.server}/api/expand`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ signs: text.split(/\s+/), style: 'casual' }),
+        body: JSON.stringify({ text, style: 'casual' }),
       })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       const body = await response.json()
@@ -228,12 +236,16 @@
     if (!text) return setStatus('Prepare or enter a draft first.', 'error')
     const post = state.shadow.getElementById('ft-chat').checked
     const voice = state.shadow.getElementById('ft-voice').checked && state.mode !== 'captions'
-    captions.add(text, 'Visible only to you unless an optional delivery succeeds.')
-    setStatus('Local caption shown. Checking selected delivery options…', 'working')
+    const inCamera = state.burn && state.wrapped?.video
+    if (state.burn) burn(text, true)
+    captions.add(text, inCamera ? 'Shown in your camera: everyone in the meeting can read it.'
+      : 'Visible only to you (turn your camera off and on once if the meeting started before the extension).')
+    setStatus('Caption shown. Checking selected delivery options…', 'working')
     const results = []
+    if (inCamera) results.push({ ok: true, reason: 'Drawn into your camera for everyone.' })
     if (post) results.push(await postToMeetChat(text))
     if (voice) results.push(await speakIntoMeeting(text))
-    if (!results.length) return setStatus('Local caption shown. It was not sent to other participants.', 'good')
+    if (!results.length) return setStatus('Local caption shown. It was not sent to other participants (camera captions are off or the camera is not on).', 'good')
     const successes = results.filter((result) => result.ok).length
     setStatus(results.map((result) => result.reason).join(' '), successes === results.length ? 'good' : 'error')
   }
@@ -260,14 +272,14 @@
         .hint{font-size:11px;color:#9fa7be}.status{margin-top:10px;padding:8px 10px;border-radius:10px;background:#1a2030;color:#cbd1e5;font-size:12px}.status[data-kind="good"]{background:#12382c;color:#b9f8dd}.status[data-kind="error"]{background:#411f29;color:#ffd0dc}
       </style>
       <div class="panel" id="ft-panel" data-open="false" role="dialog" aria-label="Fingertip meeting assistant">
-        <h2>Fingertip · ${platform}</h2><p class="eyebrow">Local caption assistance. Remote delivery is never assumed.</p>
+        <h2>Fingertip · ${platform}</h2><p class="eyebrow">Sign or type. Approved captions appear inside your camera video.</p>
         <label for="ft-mode">Communication mode</label><select id="ft-mode"><option value="ai">AI Assist</option><option value="exact">Exact Words</option><option value="captions">Captions Only</option></select>
         <label for="ft-input">Words or phrase</label><textarea id="ft-input" placeholder="yes tomorrow 5"></textarea>
         <div class="row"><button id="ft-sign">Open signing camera</button><button id="ft-prepare" data-variant="primary">Create natural reply</button></div>
         <label for="ft-draft">Review and edit before sharing</label><textarea id="ft-draft" placeholder="Your approved sentence appears here"></textarea>
-        <div class="checks"><label><input type="checkbox" id="ft-chat"> Also post to Google Meet chat (best effort)</label><label><input type="checkbox" id="ft-voice"> Also request meeting voice (experimental)</label></div>
+        <div class="checks"><label><input type="checkbox" id="ft-burn" checked> <span><b>Captions in my camera</b> · everyone in the meeting sees them <span id="ft-cam" class="hint"></span></span></label><label><input type="checkbox" id="ft-chat"> Also post to Google Meet chat (best effort)</label><label><input type="checkbox" id="ft-voice"> Also request meeting voice (experimental)</label></div>
         <button id="ft-share" data-variant="safe">Show approved caption</button>
-        <p class="hint">Zoom Web: local overlay only. Zoom Desktop and FaceTime are unsupported. Voice mixing requires reloading the tab after installing the extension.</p>
+        <p class="hint">Works in Chrome on Google Meet and Zoom Web. Install before joining (or turn your camera off/on once). Zoom Desktop and FaceTime are not supported.</p>
         <div class="status" id="ft-status" role="status">Nothing is shared until you choose Show approved caption.</div>
       </div><button class="launcher" id="ft-launcher" aria-label="Open Fingertip meeting assistant" aria-expanded="false">F</button>`
     document.documentElement.appendChild(host)
@@ -286,6 +298,11 @@
     shadow.getElementById('ft-prepare').addEventListener('click', prepareDraft)
     shadow.getElementById('ft-share').addEventListener('click', shareDraft)
     shadow.getElementById('ft-sign').addEventListener('click', openSigning)
+    shadow.getElementById('ft-burn').addEventListener('change', (e) => {
+      state.burn = e.target.checked
+      window.postMessage({ fingertip: 'burn', on: state.burn }, '*')
+    })
+    showCamState()
     if (platform !== 'Google Meet') {
       const chat = shadow.getElementById('ft-chat')
       chat.disabled = true
@@ -293,20 +310,31 @@
     }
   }
 
-  function injectMixer() {
-    if (!chrome?.runtime?.getURL) return
-    const script = document.createElement('script')
-    script.src = chrome.runtime.getURL('inject.js')
-    ;(document.head || document.documentElement).appendChild(script)
-    script.addEventListener('load', () => script.remove(), { once: true })
+  function showCamState() {
+    const el = state.shadow?.getElementById('ft-cam')
+    if (!el) return
+    el.textContent = state.wrapped?.video ? '(active)' : '(waiting for the camera)'
   }
+
+  window.addEventListener('message', (event) => {
+    if (event.source === window && event.data?.fingertip === 'wrapped') {
+      state.wrapped = event.data
+      showCamState()
+    }
+  })
 
   function receiveSigningMessage(event) {
     let serverOrigin
     try { serverOrigin = new URL(state.server).origin } catch { return }
     if (event.origin !== serverOrigin) return
     const message = event.data
-    if (!message || message.source !== 'sign2speak' || message.type !== 'send') return
+    if (!message || message.source !== 'sign2speak') return
+    if (message.type === 'partial') {
+      // Live signs while the signer is still signing: lighter caption in the camera.
+      if (state.burn) burn(clean(message.text), false)
+      return
+    }
+    if (message.type !== 'send') return
     buildPanel()
     state.input.value = clean(message.text)
     state.draft.value = clean(message.text)
@@ -314,7 +342,6 @@
     setStatus('Recognized text received. Review it before sharing.', 'good')
   }
 
-  injectMixer()
   chrome.storage.sync.get({ server: state.server }, (values) => {
     try { state.server = new URL(values.server).origin } catch { /* keep localhost */ }
   })

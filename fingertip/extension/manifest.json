@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Fingertip Meeting Captions",
-  "version": "0.2.0",
-  "description": "Prepare sign- or text-assisted replies and show accessible local captions in Google Meet and Zoom Web.",
+  "version": "0.3.0",
+  "description": "Sign or type in Google Meet and Zoom Web: your approved captions are drawn into your camera so everyone in the meeting can read them.",
   "permissions": ["storage"],
   "host_permissions": [
     "http://localhost/*",
     "http://127.0.0.1/*"
   ],
   "optional_host_permissions": ["https://*/*"],
+  "icons": { "128": "icon-128.png" },
   "content_scripts": [
     {
       "matches": [
@@ -16,21 +17,27 @@
         "https://app.zoom.us/wc/*",
         "https://*.zoom.us/wc/*",
         "https://zoom.us/j/*",
-        "https://*.zoom.us/j/*"
+        "https://*.zoom.us/j/*",
+        "http://127.0.0.1/ext-test*",
+        "http://localhost/ext-test*"
+      ],
+      "js": ["inject.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://meet.google.com/*",
+        "https://app.zoom.us/wc/*",
+        "https://*.zoom.us/wc/*",
+        "https://zoom.us/j/*",
+        "https://*.zoom.us/j/*",
+        "http://127.0.0.1/ext-test*",
+        "http://localhost/ext-test*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": ["inject.js"],
-      "matches": [
-        "https://meet.google.com/*",
-        "https://app.zoom.us/*",
-        "https://*.zoom.us/*",
-        "https://zoom.us/*"
-      ]
     }
   ],
   "options_page": "options.html"

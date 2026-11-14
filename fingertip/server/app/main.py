@@ -36,7 +36,9 @@ from pydantic import BaseModel
 from twilio.request_validator import RequestValidator
 
 from . import grok_voice, relay, translate
-from .ai import make_brain
+from .ai import RulesBrain, make_brain
+
+RulesBrainFallback = RulesBrain()
 from .show import VIDEO_TYPES, ShowStore, ask_video, make_video_engine, public_record, run_job, shared_record
 from .config import settings
 from .controller import ENDED, RINGING, Contact, Controller
@@ -195,6 +197,26 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+# The Meet/Zoom extension's content script calls /api/signs/sentence and /api/tts from the meeting page.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://meet.google.com"],
+    allow_origin_regex=r"https://([a-z0-9-]+\.)?zoom\.us|http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
+
+@app.middleware("http")
+async def private_network_access(request: Request, call_next):
+    """Chrome asks before a public HTTPS page (Meet) calls a local server. Say yes for the extension's calls."""
+    response = await call_next(request)
+    if request.headers.get("access-control-request-private-network") == "true":
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
 
 
 async def twilio_form(request: Request) -> dict:
@@ -844,6 +866,28 @@ class SentenceIn(BaseModel):
     style: str = "casual"
 
 
+class ExpandIn(BaseModel):
+    text: str
+    context: str = ""               # what the other person just said, if known
+    style: str = "casual"           # casual | polite
+
+
+@app.post("/api/expand")
+async def expand_text(body: ExpandIn, key: Optional[str] = None) -> dict:
+    """AI Assist outside a phone call (meeting extension): shorthand -> one natural sentence, guarded."""
+    check_key(key)
+    from . import guards
+    hint = body.text.strip()[:300]
+    ctx = {"contact_name": "people in a meeting", "casual": body.style != "polite", "note_facts": [], "recent": []}
+    t0 = time.perf_counter()
+    text = await state["brain"].write_typed_reply(hint, body.context[:400], ctx, "neutral")
+    problems = guards.fact_guard(text, [hint, body.context]).problems
+    if problems:
+        text = await RulesBrainFallback.write_typed_reply(hint, body.context, ctx, "neutral")
+    latency.record("expand_ms", (time.perf_counter() - t0) * 1000)
+    return {"text": text, "ms": round((time.perf_counter() - t0) * 1000), "guarded": bool(problems)}
+
+
 @app.post("/api/signs/sentence")
 async def signs_sentence(body: SentenceIn, key: Optional[str] = None) -> dict:
     """In-person mode: signs -> one sentence, with the same fact/negation/hedge guards."""
@@ -1154,6 +1198,12 @@ async def plain_errors(request: Request, exc: Exception) -> JSONResponse:
 
 
 # ---------------------------------------------------------------- static app
+
+@app.get("/ext-test")
+async def ext_test() -> Response:
+    """Stand-in meeting page for testing the Chrome extension (it matches /ext-test like Meet)."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "ext-test.html"))
+
 
 from .rooms import router as rooms_router  # noqa: E402  browser video calls (must precede the SPA catch-all)
 

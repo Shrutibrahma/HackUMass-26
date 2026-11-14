@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import { post } from '../api'
 import { APP_NAME } from '../brand'
-import { useSigning } from '../sign/useSigning'
+import { pretty, useSigning } from '../sign/useSigning'
+
+const MEETING_ORIGINS = (() => {
+  const list = ['https://meet.google.com', 'https://app.zoom.us', 'https://zoom.us',
+    `${location.protocol}//127.0.0.1:${location.port}`, `${location.protocol}//localhost:${location.port}`]
+  // Zoom web runs on regional subdomains (us05web.zoom.us ...): trust the opener's origin only if it is Zoom.
+  try { const r = new URL(document.referrer).origin; if (/^https:\/\/[a-z0-9-]+\.zoom\.us$/.test(r)) list.push(r) } catch { /* no referrer */ }
+  return list
+})()
 import { SelfView } from './Call'
 
 /**
@@ -56,7 +64,13 @@ export function MeetLive({ embedded = false }: { embedded?: boolean }) {
   const [sent, setSent] = useState<string[]>([])
   const [err, setErr] = useState('')
   const opener = typeof window !== 'undefined' ? window.opener : null
+  // Only meeting pages the extension runs on may receive the signer's text (postMessage drops other origins).
+  const tell = (msg: object) => {
+    if (!opener || embedded) return
+    for (const o of MEETING_ORIGINS) { try { opener.postMessage({ source: 'sign2speak', ...msg }, o) } catch { /* closed */ } }
+  }
   const sign = useSigning({
+    onSigns: (s) => tell({ type: 'partial', text: s.map(pretty).join(' ') }),
     onPhrase: (s) => {
       post<{ text: string }>('/api/signs/sentence', { signs: s, style: 'polite' })
         .then((r) => { setDraft(r.text); setEditing(false) }).catch(() => {})
@@ -69,7 +83,7 @@ export function MeetLive({ embedded = false }: { embedded?: boolean }) {
     setErr('')
     const done = () => { setSent((s) => [...s, text]); setDraft(''); setEditing(false) }
     if (opener && !embedded) {
-      opener.postMessage({ source: 'sign2speak', type: 'send', text }, 'https://meet.google.com')
+      tell({ type: 'send', text })
       done()
       return
     }
