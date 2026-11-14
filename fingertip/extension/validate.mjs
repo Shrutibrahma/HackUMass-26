@@ -19,7 +19,8 @@ const declaredFiles = [
   manifest.options_page,
   ...Object.values(manifest.icons || {}),
   ...scripts.flatMap((entry) => entry.js || []),
+  manifest.background?.service_worker,
 ]
-for (const file of declaredFiles) await access(new URL(`./${file}`, import.meta.url))
+for (const file of declaredFiles.filter(Boolean)) await access(new URL(`./${file}`, import.meta.url))
 
 console.log(`Manifest OK: ${manifest.name} ${manifest.version}; ${matches.length} supported URL patterns.`)

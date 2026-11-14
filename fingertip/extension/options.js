@@ -2,7 +2,7 @@ const input = document.getElementById('server')
 const status = document.getElementById('status')
 const save = document.getElementById('save')
 
-chrome.storage.sync.get({ server: 'http://localhost:8000' }, (values) => { input.value = values.server })
+chrome.storage.sync.get({ server: 'http://127.0.0.1:8000' }, (values) => { input.value = values.server })
 
 save.addEventListener('click', async () => {
   status.textContent = ''
