@@ -335,9 +335,9 @@ export function ContactCard({ contact, voiceName, langs, onChange, onBack, onCal
 
 /* ---------------------------------------------------------------- settings */
 
-export function SettingsIOS({ prefs, voiceName, onChange, onVoice, onBack, onMeetings, onPlayground }: {
+export function SettingsIOS({ prefs, voiceName, onChange, onVoice, onBack, onMeetings, onPlayground, onSigning }: {
   prefs: Prefs; voiceName: string; onChange: (p: Prefs) => void; onVoice: () => void; onBack: () => void
-  onMeetings: () => void; onPlayground: () => void
+  onMeetings: () => void; onPlayground: () => void; onSigning: () => void
 }) {
   const [adding, setAdding] = useState('')
   const add = () => { const t = adding.trim(); if (t && !prefs.quick.includes(t)) onChange({ ...prefs, quick: [...prefs.quick, t].slice(0, 12) }); setAdding('') }
@@ -350,6 +350,8 @@ export function SettingsIOS({ prefs, voiceName, onChange, onVoice, onBack, onMee
         <div className="ios-group">
           <button className="ios-row" onClick={onVoice}><span className="ios-icon-tile" style={{ background: 'var(--sys-indigo)' }}><SFSparkles size={17} /></span>
             <span className="grow">Your voice</span><span className="detail">{voiceName}</span><SFChevronRight size={16} className="chev" /></button>
+          <button className="ios-row" onClick={onSigning}><span className="ios-icon-tile" style={{ background: 'var(--sys-orange)' }}><SFHand size={17} /></span>
+            <span className="grow">Signing<span className="sub">Practise the 50 signs, teach your own</span></span><SFChevronRight size={16} className="chev" /></button>
         </div>
         <div className="ios-section-h">Caption size</div>
         <div className="ios-group" style={{ padding: 12 }}>

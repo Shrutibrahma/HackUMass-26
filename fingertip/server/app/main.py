@@ -844,6 +844,29 @@ async def signs_classify(body: ClassifyIn, key: Optional[str] = None) -> dict:
     return r
 
 
+class TeachIn(BaseModel):
+    label: str                      # any word or short phrase, in any sign language
+    frames: list[dict]
+    hand: str = "right"
+
+
+@app.post("/api/signs/teach")
+async def signs_teach(body: TeachIn, key: Optional[str] = None) -> dict:
+    """The signer teaches one example of their own sign (landmarks only)."""
+    check_key(key)
+    if not state["signs"]:
+        raise HTTPException(503, "Signing isn't available right now.")
+    return await asyncio.to_thread(state["signs"].teach, body.label, body.frames[:240], body.hand)
+
+
+@app.delete("/api/signs/personal/{label}")
+async def signs_forget(label: str, last: bool = False, key: Optional[str] = None) -> dict:
+    check_key(key)
+    p = state["signs"].personal
+    n = (1 if p.remove_last(label) else 0) if last else p.remove(label)
+    return {"ok": True, "removed": n, "personal": p.labels()}
+
+
 class RecordIn(BaseModel):
     signer: str
     label: str                      # a gloss, or a phrase like "YES SUNDAY COME"

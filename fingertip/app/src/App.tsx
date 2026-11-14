@@ -9,6 +9,7 @@ import { ShowFlow } from './screens/Show'
 import { VideoCall } from './screens/VideoCall'
 import { ErrandNote, type Prefs } from './screens/Setup'
 import { ContactCard, PhoneHome, SettingsIOS, VoicePickerIOS } from './screens/Phone'
+import { SignSetup } from './screens/SignSetup'
 import { initial, reduce } from './store'
 import { load, save } from './storage'
 import type { CallView, Contact, Recent, SavedTranscript } from './types'
@@ -20,6 +21,7 @@ type Route =
   | { name: 'voice'; back: Route }
   | { name: 'inperson' }
   | { name: 'settings' }
+  | { name: 'signing' }
   | { name: 'show' }
   | { name: 'video'; room: string; peer?: string }
 
@@ -186,9 +188,11 @@ export default function App() {
         return <VideoCall room={route.room} peer={route.peer} publicBase={publicBase} onClose={closeVideo} />
       case 'show':
         return <ShowFlow onClose={() => setRoute({ name: 'home' })} />
+      case 'signing':
+        return <SignSetup onBack={() => setRoute({ name: 'settings' })} />
       case 'settings':
         return <SettingsIOS prefs={prefs} voiceName={voiceName} onChange={setPrefs}
-          onVoice={() => setRoute({ name: 'voice', back: { name: 'settings' } })} onBack={() => setRoute({ name: 'home' })}
+          onVoice={() => setRoute({ name: 'voice', back: { name: 'settings' } })} onSigning={() => setRoute({ name: 'signing' })} onBack={() => setRoute({ name: 'home' })}
           onMeetings={() => { setTab('meetings'); setRoute({ name: 'home' }) }} onPlayground={() => { setTab('play'); setRoute({ name: 'home' }) }} />
       case 'contact': {
         const c = contacts.find((x) => x.id === route.id)

@@ -134,8 +134,17 @@ class SignBartModel:
         self.sess = ort.InferenceSession(os.path.join(d, "signbart.onnx"), opts, providers=["CPUExecutionProvider"])
         self.labels = json.load(open(os.path.join(d, "labels.json")))
 
+    def logits(self, frames: list[dict]) -> np.ndarray:
+        return self.sess.run(None, {"keypoints": signbart_input(frames)})[0][0]
+
+    def from_logits(self, logits: np.ndarray, k: int = 5, allowed: Optional[set[str]] = None) -> list[Guess]:
+        if allowed:
+            mask = np.array([gloss_of(l) in allowed for l in self.labels])
+            logits = np.where(mask, logits, -1e9)
+        return _merge(self.labels, _softmax(logits), k)
+
     def predict(self, frames: list[dict], k: int = 5, allowed: Optional[set[str]] = None) -> list[Guess]:
-        logits = self.sess.run(None, {"keypoints": signbart_input(frames)})[0][0]
+        logits = self.logits(frames)
         if allowed:
             mask = np.array([gloss_of(l) in allowed for l in self.labels])
             logits = np.where(mask, logits, -1e9)

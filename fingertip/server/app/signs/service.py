@@ -20,12 +20,19 @@ import time
 from typing import Optional
 
 from .models import MODEL_DIR, Guess, SignBartModel
+from .personal import PersonalSigns
 
 log = logging.getLogger("signs")
 
 UNSURE_P = float(os.environ.get("SIGN_UNSURE_P", "0.45"))       # tune on held-out data (eval/sign_eval.py)
 UNSURE_MARGIN = float(os.environ.get("SIGN_UNSURE_MARGIN", "0.15"))
 BOOST = 1.6
+# Personal signs (taught by this signer). Calibrated in eval/conversation50.md on real clips
+# taught by one person and signed by others (harder than the same signer):
+# >= 0.70: 29% of taught signs fire, 2% wrong, 0.8% of untaught signs fire by mistake.
+# >= 0.55: offered as an option next to the model's guess, never said without a tap.
+PERSONAL_SURE = float(os.environ.get("PERSONAL_SURE", "0.70"))
+PERSONAL_MAYBE = float(os.environ.get("PERSONAL_MAYBE", "0.55"))
 DATA_DIR = os.path.join(MODEL_DIR, "data")
 
 _NUM = {"zero": "ZERO", "one": "ONE", "two": "TWO", "three": "THREE", "four": "FOUR", "five": "FIVE", "six": "SIX",
@@ -52,11 +59,14 @@ class SignService:
         self.model: Optional[SignBartModel] = None
         self.error = ""
         self.active: list[str] = []
+        self.conversation: list[str] = []
         self._lock = threading.Lock()
+        self.personal = PersonalSigns(os.path.join(DATA_DIR, "personal.json"))
         try:
             self.model = SignBartModel()
             vocab = json.load(open(os.path.join(MODEL_DIR, "vocab.json")))
             self.active = list(vocab["active"])
+            self.conversation = list(vocab.get("conversation", []))
             log.info("sign model ready: %s, %d active signs", self.model.name, len(self.active))
         except Exception as e:  # the call still works by typing
             self.error = f"sign model not loaded: {e}"
@@ -68,7 +78,7 @@ class SignService:
 
     def config(self) -> dict:
         return {"ready": self.ready, "model": self.model.name if self.model else None, "vocab": self.active,
-                "error": self.error}
+                "conversation": self.conversation, "personal": self.personal.labels(), "error": self.error}
 
     def classify(self, frames: list[dict], hand: str = "right", options: Optional[list[str]] = None) -> dict:
         if not self.model:
@@ -78,12 +88,17 @@ class SignService:
         allowed = set(self.active) or None
         t0 = time.perf_counter()
         with self._lock:
-            variants = []
+            variants = []   # (guesses, logits, frames, hand)
             if hand in ("right", "auto"):
-                variants.append(self.model.predict(frames, k=5, allowed=allowed))
+                lg = self.model.logits(frames)
+                variants.append((self.model.from_logits(lg, k=5, allowed=allowed), lg, frames, "right"))
             if hand in ("left", "auto"):
-                variants.append(self.model.predict(_swap(frames), k=5, allowed=allowed))
-        guesses = max(variants, key=lambda g: g[0].p)
+                sw = _swap(frames)
+                lg = self.model.logits(sw)
+                variants.append((self.model.from_logits(lg, k=5, allowed=allowed), lg, frames, "left"))
+        best = max(variants, key=lambda v: v[0][0].p)
+        personal = self.personal.score(best[2], best[3], best[1])
+        guesses = best[0]
         boost = option_glosses(options or []) & (allowed or set())
         if boost:
             guesses = [Guess(g.sign, g.p * (BOOST if g.sign in boost else 1.0)) for g in guesses]
@@ -92,9 +107,41 @@ class SignService:
         ms = (time.perf_counter() - t0) * 1000
         top, second = guesses[0], guesses[1] if len(guesses) > 1 else Guess("", 0.0)
         unsure = top.p < UNSURE_P or (top.p - second.p) < UNSURE_MARGIN
-        return {"ok": True, "sign": top.sign, "unsure": unsure,
+        source = "model"
+        if personal:
+            pl, ps = personal[0]
+            p2 = personal[1][1] if len(personal) > 1 else 0.0
+            if ps >= PERSONAL_SURE and ps - p2 >= 0.03:
+                if pl != top.sign:
+                    second, top = top, Guess(pl, ps)
+                unsure, source = False, "personal"
+            elif ps >= PERSONAL_MAYBE and pl != top.sign and (unsure or ps >= PERSONAL_SURE):
+                second, top, unsure, source = top, Guess(pl, ps), True, "personal"
+            elif ps >= PERSONAL_MAYBE and pl == top.sign:
+                unsure = False                 # the signer's own examples agree with the model
+        return {"ok": True, "source": source, "sign": top.sign, "unsure": unsure,
                 "options": [top.sign, second.sign] if unsure and second.sign else [top.sign],
                 "ms": round(ms, 1), "_p": [round(g.p, 3) for g in guesses[:3]], "_top": [g.sign for g in guesses[:3]]}
+
+    # ------------------------------------------------------------ personal signs (taught by the signer)
+
+    def teach(self, label: str, frames: list[dict], hand: str = "right") -> dict:
+        if len(frames) < 4:
+            return {"ok": False, "reason": "That was too short. Sign it once, then lower your hands."}
+        if not label.strip():
+            return {"ok": False, "reason": "Type the word first."}
+        logits = None
+        if self.model:
+            with self._lock:
+                logits = self.model.logits(_swap(frames) if hand == "left" else frames)
+        r = self.personal.add(label, frames, "left" if hand == "left" else "right", logits)
+        # How well the examples agree with each other, so the app can say "sign it once more".
+        if r["count"] >= 2:
+            others = [e for e in self.personal.examples if e["label"] == r["label"] and e["id"] != r["id"]]
+            mine = self.personal.examples[-1]
+            sims = [float(o["s"] @ mine["s"]) for o in others]
+            r["consistency"] = round(max(sims), 2)
+        return r
 
     # ------------------------------------------------------------ team recordings (landmarks only)
 

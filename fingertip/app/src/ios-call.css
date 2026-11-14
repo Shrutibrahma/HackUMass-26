@@ -180,3 +180,28 @@
 @keyframes ios-answer { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
 .incoming-bottom { gap: 0; padding-bottom: calc(54px + env(safe-area-inset-bottom)); }
 .incoming-buttons { padding: 0 18px; }
+
+/* ---------------------------------------------------------------- Settings → Signing */
+.ios-back { display: inline-flex; align-items: center; gap: 2px; color: var(--sys-blue); font-size: 17px; background: none; border: 0; padding: 0; }
+.sign-setup .ss-stage { margin: 0 16px; border-radius: 22px; overflow: hidden; position: relative; background: #000; }
+.sign-setup .ss-cam { position: relative; width: 100%; aspect-ratio: 4 / 3; }
+.sign-setup .ss-cam video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); display: block; }
+.sign-setup .ss-cam .ph { width: 100%; height: 100%; display: grid; place-items: center; color: var(--label-2); }
+.sign-setup .ss-cam.signing { box-shadow: inset 0 0 0 3px var(--sys-green); }
+.sign-setup .ss-hint { position: absolute; top: 12px; left: 12px; right: 12px; text-align: center; font-size: 13px; font-weight: 600;
+  padding: 6px 10px; border-radius: 999px; background: rgba(0,0,0,.55); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); color: #fff; }
+.sign-setup .ss-heard, .sign-setup .ss-teach { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 12px 14px; border-radius: 18px;
+  background: var(--material, rgba(30,30,32,.72)); backdrop-filter: blur(30px) saturate(1.6); -webkit-backdrop-filter: blur(30px) saturate(1.6); color: var(--label); }
+.sign-setup .ss-heard { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
+.sign-setup .ss-chip { font-size: 20px; font-weight: 700; letter-spacing: -.01em; display: inline-flex; align-items: baseline; gap: 4px; animation: ss-in .25s var(--ease, ease); }
+.sign-setup .ss-chip.unsure { color: var(--sys-orange); }
+.sign-setup .ss-chip em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--sys-indigo); text-transform: uppercase; letter-spacing: .04em; }
+.sign-setup .ss-empty { color: var(--label-2); font-size: 15px; }
+.sign-setup .ss-teach { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.sign-setup .ss-teach-word { font-size: 28px; font-weight: 700; letter-spacing: -.02em; }
+.sign-setup .ss-teach-sub { font-size: 13px; color: var(--label-2); }
+.sign-setup .ss-dots { display: flex; gap: 8px; }
+.sign-setup .ss-dots span { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--fill-1, rgba(120,120,128,.36)); display: grid; place-items: center; color: #fff; transition: all .2s var(--ease, ease); }
+.sign-setup .ss-dots span.on { background: var(--sys-green); border-color: var(--sys-green); }
+.sign-setup .ss-note { position: absolute; top: 48px; left: 12px; right: 12px; text-align: center; font-size: 13px; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+@keyframes ss-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
