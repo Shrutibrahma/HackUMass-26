@@ -17,7 +17,9 @@ import asyncio
 import io
 import logging
 import math
+import json
 import os
+import random
 import re
 import secrets
 import struct
@@ -244,6 +246,7 @@ async def health() -> dict:
         "meet_voice": tts_provider() or None,
         "signs": state["signs"].config() if state["signs"] else None,
         "latency": latency.summary(),
+        "demo_available": True,
     }
 
 
@@ -389,7 +392,7 @@ async def ws_app(ws: WebSocket, key: Optional[str] = None) -> None:
         # Reattach: send every live (or just-ended) call so a reload picks up where it was.
         for c in list(sessions.values()):
             if c.state == RINGING and c.direction == "incoming":
-                await ws.send_json({"type": "ringing", "sid": c.id, "contact": asdict(c.contact)})
+                await ws.send_json({"type": "ringing", "sid": c.id, "contact": asdict(c.contact), "demo": c.demo})
             elif c.state != ENDED or (c.started_at and time.time() - c.started_at < 900):
                 await ws.send_json(c.snapshot())
         while True:
@@ -472,6 +475,11 @@ async def answer(sid: str, key: Optional[str] = None) -> dict:
     c = get_session(sid)
     if c.state != RINGING:
         return {"ok": True}
+    if c.demo:
+        c.started_at = c.started_at or time.time()
+        await demo_start(c)
+        await hub.broadcast(c.snapshot())
+        return {"ok": True}
     try:
         await state["telephony"].update_twiml(c.call_sid, twiml_for(c))
     except Exception as e:
@@ -489,8 +497,9 @@ async def decline(sid: str, key: Optional[str] = None) -> dict:
     check_key(key)
     c = get_session(sid)
     try:
-        await state["telephony"].update_twiml(
-            c.call_sid, relay.goodbye_twiml("Sorry, they can't pick up right now. Please try again later."))
+        if not c.demo:
+            await state["telephony"].update_twiml(
+                c.call_sid, relay.goodbye_twiml("Sorry, they can't pick up right now. Please try again later."))
     except Exception:
         log.exception("decline")
     await end_session(c, "declined")
@@ -506,7 +515,7 @@ async def hangup(sid: str, key: Optional[str] = None) -> dict:
             await c._relay_send(relay.end_message("hangup"))
         except Exception:
             pass
-    if c.call_sid:
+    if c.call_sid and not c.demo:
         await state["telephony"].hangup(c.call_sid)
     await end_session(c, "hangup")
     return {"ok": True, "recap": c.recap}
@@ -514,6 +523,143 @@ async def hangup(sid: str, key: Optional[str] = None) -> dict:
 
 class NoteIn(BaseModel):
     note: str
+
+
+# ---------------------------------------------------------------- SIMULATED demo mode
+# For when Twilio is unavailable. No telephony is touched; a scripted fake caller talks to the
+# signer. Every event and snapshot for these sessions carries "demo": true (Controller.emit).
+
+DEMO_SCRIPTS = {
+    "mom": ["Hi sweetie, it's Mom! When will you be home tonight?",
+            "Perfect. Can you pick up some milk on the way?",
+            "Thank you! Oh, and are you still coming Sunday?",
+            "Wonderful. Love you, see you soon!"],
+}
+
+
+def _demo_script(name: str, outgoing: bool) -> list[str]:
+    lines = DEMO_SCRIPTS.get(name.strip().lower())
+    if lines is None:
+        lines = [f"Hi, it's {name}! Do you have a minute?", "Great! How's your day going?",
+                 "Nice! Want to catch up later this week?", "Sounds good, talk soon!"]
+    return (["Hello?"] + lines[1:]) if outgoing else list(lines)
+
+
+def _demo_speed() -> float:
+    try:
+        return max(0.0, float(os.getenv("DEMO_SPEED", "1")))
+    except ValueError:
+        return 1.0
+
+
+class DemoRunner:
+    """In-process fake ConversationRelay + scripted caller."""
+
+    def __init__(self, c: Controller, lines: list[str]) -> None:
+        self.c, self.lines, self.idx = c, lines, 0
+        self.started = self.pending = self.owed = False
+        self.sent: list[str] = []          # what the signer "spoke" (no audio is produced)
+        self.task: Optional[asyncio.Task] = None
+
+    async def send(self, text: str) -> None:
+        try:
+            m = json.loads(text)
+        except ValueError:
+            return
+        if m.get("type") != "text":
+            return
+        self.sent.append(m.get("token", ""))
+        if self.c.spoken_log and self.c.spoken_log[-1][1] == "reply":     # not intro/filler/etc.
+            self.advance()
+
+    def advance(self) -> None:
+        if not self.started or self.idx >= len(self.lines):
+            return
+        if self.pending:
+            self.owed = True
+            return
+        self.pending = True
+        self.task = asyncio.create_task(self._deliver())
+
+    async def _deliver(self) -> None:
+        c, speed = self.c, _demo_speed()
+        try:
+            await asyncio.sleep(random.uniform(1.2, 2.0) * speed)
+            if c.state == ENDED or self.idx >= len(self.lines):
+                return
+            line = self.lines[self.idx]
+            self.idx += 1
+            words = line.split()
+            await c.on_prompt(" ".join(words[:max(1, len(words) // 2)]), False)
+            await asyncio.sleep(0.4 * speed)
+            if c.state == ENDED:
+                return
+            await c.on_prompt(line, True)
+        finally:
+            self.pending = False
+            if self.owed and c.state != ENDED:
+                self.owed = False
+                self.advance()
+
+
+async def demo_start(c: Controller) -> None:
+    """Attach the fake relay, then queue the caller's first line."""
+    r: DemoRunner = c.demo_runner
+    await c.attach_relay(r.send, {"callSid": c.call_sid})
+    r.started = True
+    r.pending = True
+    r.task = asyncio.create_task(r._deliver())
+    # Typed "captions only" sends never reach the relay; still move the script along.
+    orig = c.caption_only
+
+    async def caption_only(text: str, source: str = "typed") -> dict:
+        res = await orig(text, source)
+        if res.get("ok"):
+            r.advance()
+        return res
+
+    c.caption_only = caption_only
+
+
+class DemoIn(BaseModel):
+    name: str = "Mom"
+    number: str = "+14135550123"
+
+
+def _demo_session(body: DemoIn, direction: str) -> Controller:
+    name = (body.name or "Mom").strip()[:60] or "Mom"
+    contact = Contact(name=name, number=body.number, kind="person", knows_sign=False)
+    c = new_session(contact, direction)
+    c.demo = True
+    c.call_sid = "CADEMO" + secrets.token_hex(8)
+    c.demo_runner = DemoRunner(c, _demo_script(name, direction == "outgoing"))
+    by_call_sid[c.call_sid] = c.id
+    return c
+
+
+@app.post("/api/demo/incoming")
+async def demo_incoming(body: Optional[DemoIn] = None, key: Optional[str] = None) -> dict:
+    check_key(key)
+    c = _demo_session(body or DemoIn(), "incoming")
+    await hub.broadcast({"type": "ringing", "sid": c.id, "contact": asdict(c.contact), "demo": True})
+    return {"sid": c.id}
+
+
+async def _demo_connect_outgoing(c: Controller) -> None:
+    await asyncio.sleep(2.0 * _demo_speed())
+    if c.state == RINGING:
+        c.started_at = c.started_at or time.time()
+        await demo_start(c)
+        await hub.broadcast(c.snapshot())
+
+
+@app.post("/api/demo/outgoing")
+async def demo_outgoing(body: Optional[DemoIn] = None, key: Optional[str] = None) -> dict:
+    check_key(key)
+    c = _demo_session(body or DemoIn(), "outgoing")
+    await hub.broadcast(c.snapshot())          # state RINGING, demo true
+    c.demo_task = asyncio.create_task(_demo_connect_outgoing(c))
+    return {"sid": c.id}
 
 
 @app.post("/api/note/parse")

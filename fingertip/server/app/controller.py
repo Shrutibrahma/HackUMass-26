@@ -126,6 +126,7 @@ class Controller:
         self.ended_reason = ""
         self.recap: list[str] = []
         self.mode = "ai_assist"
+        self.demo = False             # SIMULATED demo call (no Twilio); every event is tagged demo:true
 
         self._relay_send: Optional[Callable[[str], Awaitable[None]]] = None
         self._queue: list[tuple] = []      # (text, level, kind, bypass_dup, draft, tone, spoken)
@@ -146,6 +147,8 @@ class Controller:
 
     async def emit(self, msg: dict) -> None:
         msg.setdefault("sid", self.id)
+        if self.demo:
+            msg["demo"] = True
         if self.emit_fn:
             try:
                 await self.emit_fn(msg)
@@ -202,6 +205,7 @@ class Controller:
             "recap": self.recap,
             "ended_reason": self.ended_reason,
             "mode": self.mode,
+            "demo": self.demo,
         }
 
     async def _line(self, line: Line, new: bool = True) -> None:
@@ -532,6 +536,11 @@ class Controller:
         if not force and not self.dup.check(d.text):
             return {"ok": False, "reason": "You just said that."}
         self.draft = d
+        if (d.level == CONFIRM and source == "draft" and d.source in {"ai", "signs"}
+                and d.confirm_summary == "This says yes to a commitment"):
+            # The signer already read and approved this exact sentence in the preview. A plain "yes" to a
+            # plan doesn't need a second tap; money, orders and bookings still always get the confirm sheet.
+            d.level = QUICK
         if d.level == CONFIRM:
             await self._open_confirm()
             return {"ok": True, "confirm": True}

@@ -82,6 +82,7 @@ type HomeProps = {
   onSettings: () => void
   onShow?: () => void
   onVideo?: () => void
+  onDemo?: () => void
   tabs?: React.ReactNode
 }
 
@@ -98,7 +99,7 @@ export function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   )
 }
 
-export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, onSettings, onShow, onVideo, tabs }: HomeProps) {
+export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, onSettings, onShow, onVideo, onDemo, tabs }: HomeProps) {
   const [sheet, setSheet] = useState<'pad' | 'new' | null>(null)
   const favs = contacts.filter((c) => c.fav)
   const find = (r: Recent) => contacts.find((c) => c.id === r.contactId)
@@ -140,6 +141,11 @@ export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, on
           <button className="cardbox tip" onClick={onShow}>
             <span className="ico"><VideoIcon size={22} /></span>
             <span><b>Show it</b><small>Film a problem instead of describing it</small></span>
+          </button>
+        )}
+        {onDemo && (
+          <button className="link" style={{ alignSelf: 'flex-start', fontSize: 13, opacity: .7 }} onClick={onDemo}>
+            Rehearse: simulated call from Mom (no real phone)
           </button>
         )}
         <div className="label" style={{ marginTop: 6 }}>Recent</div>

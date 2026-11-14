@@ -6,6 +6,7 @@ import { InPerson } from './screens/InPerson'
 import { MeetingsPage } from './screens/Meet'
 import { Playground } from './screens/Playground'
 import { ShowFlow } from './screens/Show'
+import { VideoCall } from './screens/VideoCall'
 import { ContactPage, ErrandNote, Home, Settings, Tabs, VoicePicker, type Prefs, type Tab } from './screens/Setup'
 import { initial, reduce } from './store'
 import { load, save } from './storage'
@@ -19,6 +20,7 @@ type Route =
   | { name: 'inperson' }
   | { name: 'settings' }
   | { name: 'show' }
+  | { name: 'video'; room: string }
 
 export default function App() {
   const [s, dispatch] = useReducer(reduce, initial)
@@ -34,6 +36,7 @@ export default function App() {
   const tabs = <Tabs tab={tab} onTab={setTab} />
   const [myName, setMyName] = useState<string>(() => load('myName', ''))
   const [prefs, setPrefs] = useState<Prefs>(() => ({ quick: DEFAULT_QUICK, capScale: 1, introStyle: 'deaf', ...load<Partial<Prefs>>('prefs', {}) }))
+  const [demoSids, setDemoSids] = useState<Set<string>>(() => new Set())
   const live = useRef<Live | null>(null)
   const helloRef = useRef(() => ({}))
   helloRef.current = () => ({ type: 'hello', contacts, voice_id: voiceId, intro_style: prefs.introStyle })
@@ -44,7 +47,11 @@ export default function App() {
 
   useEffect(() => {
     const l = new Live(() => helloRef.current())
-    l.onMessage = (m) => dispatch(m)
+    l.onMessage = (m) => {
+      const mm = m as { demo?: boolean; sid?: string }
+      if (mm.demo === true && mm.sid) setDemoSids((d) => (d.has(mm.sid!) ? d : new Set(d).add(mm.sid!)))
+      dispatch(m)
+    }
     l.onStatus = setOnline
     l.connect()
     live.current = l
@@ -129,6 +136,8 @@ export default function App() {
         return <VoicePicker current={voiceId} onDone={(id) => { setVoiceId(id); save('voice', id); setRoute(route.back) }} />
       case 'inperson':
         return <InPerson myName={myName} onDone={() => setRoute({ name: 'home' })} />
+      case 'video':
+        return <VideoCall room={route.room} onClose={() => setRoute({ name: 'home' })} />
       case 'show':
         return <ShowFlow onClose={() => setRoute({ name: 'home' })} />
       case 'settings':
@@ -164,18 +173,21 @@ export default function App() {
           onInPerson={() => setRoute({ name: 'inperson' })}
           onShow={() => setRoute({ name: 'show' })}
           onVideo={async () => {
-            // Open the tab synchronously so pop-up blockers allow it, then point it at the new room.
-            const w = window.open('about:blank', '_blank')
             try {
-              const r = await post<{ room: string; host_url: string }>('/api/rooms', {})
-              if (w) w.location.href = r.host_url; else location.href = r.host_url
-            } catch (e: any) { w?.close(); alert(e.message) }
+              const r = await post<{ room: string }>('/api/rooms', {})
+              setRoute({ name: 'video', room: r.room })
+            } catch (e: any) { alert(e.message) }
           }}
-          onSettings={() => setRoute({ name: 'settings' })} />
+          onSettings={() => setRoute({ name: 'settings' })}
+          onDemo={() => post('/api/demo/incoming', { name: 'Mom' }).catch((e) => alert(e.message))} />
     }
   }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs])
 
-  return screen
+  const shownSid = (ringing && !active) ? ringing.sid : active?.sid
+  const isDemo = !!shownSid && demoSids.has(shownSid)
+  return isDemo
+    ? <>{screen}<div className="demo-badge" role="status">SIMULATED DEMO · no real phone call</div></>
+    : screen
 }
 
 
