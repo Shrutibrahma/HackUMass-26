@@ -173,3 +173,10 @@
 .note-tags span { padding: 6px 12px; border-radius: 99px; font-size: 15px; }
 .note-tags .blue { background: rgba(10,132,255,.18); color: #a8d1ff; }
 .note-tags .amber { background: rgba(255,159,10,.18); color: #ffd18a; }
+/* Ripple plays once when you answer (not while ringing). */
+.call-avatar-wrap .pulse { display: none; }
+.call-avatar-wrap .ripple { width: 132px; height: 132px; border-radius: 50%; border: 2px solid rgba(48,209,88,.7); animation: ios-answer .9s cubic-bezier(.2,.7,.3,1) forwards; }
+.call-avatar-wrap .ripple.r2 { animation-delay: .25s; opacity: 0; }
+@keyframes ios-answer { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.1); opacity: 0; } }
+.incoming-bottom { gap: 0; padding-bottom: calc(54px + env(safe-area-inset-bottom)); }
+.incoming-buttons { padding: 0 18px; }

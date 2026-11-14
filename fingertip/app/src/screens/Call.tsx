@@ -23,23 +23,10 @@ const COMMUNICATION_MODES: { id: CommunicationMode; label: string; short: string
 
 /* ---------------------------------------------------------------- incoming (iOS 17 style) */
 
-function SwipeToAnswer({ onAnswer }: { onAnswer: () => void }) {
-  const [value, setValue] = useState(0)
-  const finish = () => { if (value >= 82) onAnswer(); else setValue(0) }
-  return (
-    <div className="answer-slider" style={{ ['--swipe' as string]: `${value}%` }}>
-      <span aria-hidden>slide to answer</span>
-      <i className="knob" aria-hidden><SFPhone size={26} /></i>
-      <input aria-label="Slide to answer" type="range" min="0" max="100" value={value}
-        onChange={(e) => setValue(Number(e.target.value))} onPointerUp={finish}
-        onKeyUp={(e) => { if (e.key === 'Enter' || e.key === ' ') finish() }} />
-    </div>
-  )
-}
-
-export function Incoming({ call, onAnswer, onDecline, demo = false }: { call: CallView; onAnswer: () => void; onDecline: () => void; demo?: boolean }) {
+export function Incoming({ call, onAnswer, onDecline, demo = false, answered = false }: { call: CallView; onAnswer: () => void; onDecline: () => void; demo?: boolean; answered?: boolean }) {
   useEffect(() => { try { navigator.vibrate?.([400, 200, 400, 200, 400]) } catch { /* not supported */ } }, [])
-  const [answering, setAnswering] = useState(false)
+  const [clicked, setAnswering] = useState(false)
+  const answering = clicked || answered
   const c = call.contact
   const answer = () => { if (!answering) { setAnswering(true); onAnswer() } }
   return (
@@ -52,13 +39,12 @@ export function Incoming({ call, onAnswer, onDecline, demo = false }: { call: Ca
         <h1 className="call-name">{c.name || 'Unknown caller'}</h1>
         <div className="call-cap"><SFCaptions size={15} /> Live captions on · reply by signing or typing</div>
       </div>
-      <div className="call-avatar-wrap"><div className="pulse" aria-hidden /><IOSAvatar name={c.name} size="xl" business={c.kind === 'business'} /></div>
+      <div className="call-avatar-wrap">{answering && <><i className="ripple" aria-hidden /><i className="ripple r2" aria-hidden /></>}<IOSAvatar name={c.name} size="xl" business={c.kind === 'business'} /></div>
       <div className="incoming-bottom">
         <div className="incoming-buttons">
           <div className="ios-callbtn"><button className="red" onClick={onDecline} aria-label="Decline call"><SFPhoneDown size={34} /></button>Decline</div>
           <div className="ios-callbtn"><button className="green" onClick={answer} aria-label="Accept call"><SFPhone size={32} /></button>Accept</div>
         </div>
-        <SwipeToAnswer onAnswer={answer} />
       </div>
     </div>
   )

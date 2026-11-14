@@ -51,6 +51,8 @@ export default function App() {
   }, [])
   const [myName, setMyName] = useState<string>(() => load('myName', ''))
   const [prefs, setPrefs] = useState<Prefs>(() => ({ quick: DEFAULT_QUICK, capScale: 1, introStyle: 'deaf', ...load<Partial<Prefs>>('prefs', {}) }))
+  // Answer goes to the server immediately; the incoming screen stays ~0.8 s so the answer ripple can play.
+  const [answerAnim, setAnswerAnim] = useState<string | null>(null)
   const [demoSids, setDemoSids] = useState<Set<string>>(() => new Set())
   const live = useRef<Live | null>(null)
   const helloRef = useRef(() => ({}))
@@ -138,9 +140,15 @@ export default function App() {
   const ended = s.endedSid ? s.calls[s.endedSid] : null
 
   const screen = useMemo(() => {
+    const answeringCall = answerAnim ? (active?.sid === answerAnim ? active : ringing?.sid === answerAnim ? ringing : null) : null
+    if (answeringCall) return <Incoming call={answeringCall} answered demo={demoSids.has(answeringCall.sid)} onAnswer={() => {}} onDecline={() => {}} />
     if (ringing && !active) {
       return <Incoming call={ringing} demo={demoSids.has(ringing.sid)}
-        onAnswer={() => post(`/api/calls/${ringing.sid}/answer`).catch((e) => say(e.message, true))}
+        onAnswer={() => {
+          setAnswerAnim(ringing.sid)
+          window.setTimeout(() => setAnswerAnim(null), 800)
+          post(`/api/calls/${ringing.sid}/answer`).catch((e) => { setAnswerAnim(null); say(e.message, true) })
+        }}
         onDecline={() => post(`/api/calls/${ringing.sid}/decline`).catch(() => {})} />
     }
     if (active) {
@@ -207,7 +215,7 @@ export default function App() {
           onDemo={() => post('/api/demo/incoming', { name: 'Mom' }).catch((e) => say(`Rehearsal couldn't start: ${e.message}`, true))} />
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs, langs, demoSids, openVideo, say])
+  }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs, langs, demoSids, openVideo, say, answerAnim])
 
   return <>
     {screen}
