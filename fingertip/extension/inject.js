@@ -12,6 +12,9 @@
   const realGUM = md.getUserMedia.bind(md)
 
   const cap = { text: '', final: true, at: 0, burn: true }
+  const notes = { items: [], at: 0, live: false }      // Explain: labelled boxes drawn as tooltips
+  const NOTES_MS = 14000
+  let wantSnap = false
   const FINAL_MS = 7000
   let audioCtx = null
   let voiceIn = null
@@ -63,6 +66,98 @@
     ctx.fillText(tag, x + tf / 2, y - tf * 1.45)
   }
 
+  function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r)
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath()
+  }
+
+  /** Numbered outline around each part + a tooltip bubble pointing at it (Explain). */
+  function drawNotes(ctx, W, H) {
+    if (!notes.items.length) return
+    const age = performance.now() - notes.at
+    if (!notes.live && age > NOTES_MS) return
+    const alpha = Math.min(1, age / 250) * (notes.live ? 1 : Math.min(1, (NOTES_MS - age) / 600))
+    ctx.save()
+    ctx.globalAlpha = Math.max(0, alpha)
+    const fs = Math.max(13, Math.round(H * 0.032))
+    const COLORS = ['#ffd84d', '#5ee0ff', '#ff8ad8', '#8dff9e', '#ffb35c', '#b9a6ff']
+    const placed = []
+    notes.items.forEach((it, i) => {
+      const [y0, x0, y1, x1] = it.box
+      const bx = (x0 / 1000) * W, by = (y0 / 1000) * H, bw = ((x1 - x0) / 1000) * W, bh = ((y1 - y0) / 1000) * H
+      const col = COLORS[i % COLORS.length]
+      ctx.lineWidth = Math.max(3, H * 0.006)
+      ctx.strokeStyle = col
+      ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 6
+      roundRect(ctx, bx, by, bw, bh, Math.min(14, bw / 4, bh / 4)); ctx.stroke()
+      ctx.shadowBlur = 0
+      // number badge on the box corner
+      const r = fs * 0.75
+      ctx.fillStyle = col
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#111'; ctx.font = `800 ${fs}px system-ui, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(String(i + 1), bx, by + 1)
+      // tooltip bubble: above the box if there is room, else below; avoid earlier bubbles
+      ctx.font = `700 ${fs}px system-ui, sans-serif`
+      const title = it.label
+      const note = it.note || ''
+      ctx.font = `500 ${Math.round(fs * 0.82)}px system-ui, sans-serif`
+      const noteLines = note ? wrap(ctx, note, Math.min(W * 0.38, 420), 2) : []
+      ctx.font = `700 ${fs}px system-ui, sans-serif`
+      const tw = Math.max(ctx.measureText(title).width, ...noteLines.map((l) => { ctx.font = `500 ${Math.round(fs * 0.82)}px system-ui, sans-serif`; return ctx.measureText(l).width }))
+      const pad = fs * 0.5
+      const tipW = tw + pad * 2
+      const tipH = fs * 1.25 + noteLines.length * fs * 1.05 + pad * 1.2
+      // First free spot: above, below, right, left of the box (inside the frame, not on another bubble).
+      const gap = fs * 0.9
+      const clampX = (x) => Math.min(Math.max(8, x), W - tipW - 8)
+      const clampY = (y) => Math.min(Math.max(8, y), H - tipH - 8)
+      const spots = [
+        [clampX(bx + bw / 2 - tipW / 2), by - tipH - gap],
+        [clampX(bx + bw / 2 - tipW / 2), by + bh + gap],
+        [bx + bw + gap, clampY(by + bh / 2 - tipH / 2)],
+        [bx - tipW - gap, clampY(by + bh / 2 - tipH / 2)],
+      ]
+      const hits = (x, y) => placed.some((p) => x < p.x + p.w + 4 && x + tipW + 4 > p.x && y < p.y + p.h + 4 && y + tipH + 4 > p.y)
+      const inFrame = (x, y) => x >= 4 && y >= 4 && x + tipW <= W - 4 && y + tipH <= H - 4
+      let [tx, ty] = spots.find(([x, y]) => inFrame(x, y) && !hits(x, y)) || spots.find(([x, y]) => inFrame(x, y)) || [clampX(bx), clampY(by - tipH - gap)]
+      while (hits(tx, ty) && ty + tipH < H - 8) ty += 8
+      placed.push({ x: tx, y: ty, w: tipW, h: tipH })
+      // pointer line from the bubble edge to the box centre
+      const cx = bx + bw / 2, cy = by + bh / 2
+      const px = Math.min(Math.max(cx, tx), tx + tipW), py = Math.min(Math.max(cy, ty), ty + tipH)
+      ctx.strokeStyle = col; ctx.lineWidth = 2
+      ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(Math.min(Math.max(px, bx), bx + bw), Math.min(Math.max(py, by), by + bh)); ctx.stroke()
+      ctx.fillStyle = 'rgba(12,14,22,.86)'
+      roundRect(ctx, tx, ty, tipW, tipH, fs * 0.45); ctx.fill()
+      ctx.fillStyle = col; ctx.fillRect(tx, ty + fs * 0.3, 4, tipH - fs * 0.6)
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+      ctx.fillStyle = '#fff'; ctx.font = `700 ${fs}px system-ui, sans-serif`
+      ctx.fillText(title, tx + pad, ty + pad * 0.6)
+      ctx.fillStyle = 'rgba(255,255,255,.82)'; ctx.font = `500 ${Math.round(fs * 0.82)}px system-ui, sans-serif`
+      noteLines.forEach((l, j) => ctx.fillText(l, tx + pad, ty + pad * 0.6 + fs * 1.25 + j * fs * 1.05))
+    })
+    ctx.restore()
+  }
+
+  function overlaysActive() {
+    const capOn = cap.burn && cap.text && !(cap.final && performance.now() - cap.at > FINAL_MS)
+    const notesOn = notes.items.length && (notes.live || performance.now() - notes.at < NOTES_MS)
+    return capOn || notesOn
+  }
+
+  function sendSnap(canvas) {
+    wantSnap = false
+    const done = (blob) => {
+      const fr = new FileReader()
+      fr.onload = () => window.postMessage({ fingertip: 'snapped', image: fr.result }, '*')
+      fr.readAsDataURL(blob)
+    }
+    if (canvas.convertToBlob) canvas.convertToBlob({ type: 'image/jpeg', quality: 0.82 }).then(done)
+    else canvas.toBlob(done, 'image/jpeg', 0.82)
+  }
+
   // ------------------------------------------------------------------ video compositor
   function captionTrack(src) {
     // Preferred: insertable streams, frame-accurate and not throttled by timers.
@@ -75,11 +170,13 @@
         let ctx = null
         const ts = new TransformStream({
           transform(frame, ctrl) {
-            if (!cap.burn || !cap.text || (cap.final && performance.now() - cap.at > FINAL_MS)) { ctrl.enqueue(frame); return }
+            if (!wantSnap && !overlaysActive()) { ctrl.enqueue(frame); return }
             const W = frame.displayWidth
             const H = frame.displayHeight
             if (!canvas || canvas.width !== W || canvas.height !== H) { canvas = new OffscreenCanvas(W, H); ctx = canvas.getContext('2d') }
             ctx.drawImage(frame, 0, 0, W, H)
+            if (wantSnap) sendSnap(canvas)          // the clean camera picture, before any overlay
+            drawNotes(ctx, W, H)
             drawCaption(ctx, W, H)
             const out = new VideoFrame(canvas, { timestamp: frame.timestamp })
             frame.close()
@@ -118,6 +215,8 @@
       if (video.videoWidth) {
         if (canvas.width !== video.videoWidth) { canvas.width = video.videoWidth; canvas.height = video.videoHeight }
         ctx.drawImage(video, 0, 0)
+        if (wantSnap) sendSnap(canvas)
+        drawNotes(ctx, canvas.width, canvas.height)
         drawCaption(ctx, canvas.width, canvas.height)
       }
       if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(tick)
@@ -162,6 +261,12 @@
       cap.text = String(m.text || '').slice(0, 240)
       cap.final = m.final !== false
       cap.at = performance.now()
+    } else if (m.fingertip === 'snap') {
+      wantSnap = true
+    } else if (m.fingertip === 'annotate') {
+      notes.items = Array.isArray(m.items) ? m.items.filter((it) => Array.isArray(it.box) && it.box.length === 4).slice(0, 6) : []
+      notes.live = !!m.live
+      notes.at = performance.now()
     } else if (m.fingertip === 'burn') {
       cap.burn = !!m.on
     } else if (m.fingertip === 'play' && m.audio) {

@@ -250,6 +250,58 @@
     setStatus(results.map((result) => result.reason).join(' '), successes === results.length ? 'good' : 'error')
   }
 
+  // ---------------------------------------------------------------- Show & explain
+  // Point the camera at something and the AI labels its important parts as tooltips drawn into the video.
+  const explain = { busy: false, live: false, timer: null }
+
+  function snapCamera(timeout = 2500) {
+    return new Promise((resolve, reject) => {
+      const t = setTimeout(() => { window.removeEventListener('message', on); reject(new Error('Turn your camera on first.')) }, timeout)
+      function on(event) {
+        if (event.source !== window || event.data?.fingertip !== 'snapped') return
+        clearTimeout(t); window.removeEventListener('message', on); resolve(event.data.image)
+      }
+      window.addEventListener('message', on)
+      window.postMessage({ fingertip: 'snap' }, '*')
+    })
+  }
+
+  async function explainNow() {
+    if (explain.busy) return
+    if (!state.wrapped?.video) return setStatus('Explain needs your camera on in the meeting.', 'error')
+    explain.busy = true
+    const btn = state.shadow?.getElementById('ft-explain')
+    if (btn && !explain.live) btn.textContent = 'Looking…'
+    try {
+      const image = await snapCamera()
+      const question = clean(state.shadow?.getElementById('ft-ask')?.value)
+      const t0 = performance.now()
+      const response = await fetch(`${state.server}/api/explain-frame`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ image, question }),
+      })
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || `HTTP ${response.status}`)
+      const r = await response.json()
+      window.postMessage({ fingertip: 'annotate', items: r.items, live: explain.live }, '*')
+      if (r.summary && !explain.live) {
+        burn(r.summary, true)
+        captions.add(r.summary, `Explained ${r.items.length} thing${r.items.length === 1 ? '' : 's'} in your camera (${Math.round(performance.now() - t0)} ms).`)
+      }
+      setStatus(r.items.length ? `Labelled: ${r.items.map((it, i) => `${i + 1}. ${it.label}`).join('  ')}` : 'Nothing clear to label. Hold it closer to the camera.', r.items.length ? 'good' : 'error')
+    } catch (error) {
+      setStatus(`Explain: ${error.message}`, 'error')
+    } finally {
+      explain.busy = false
+      if (btn) btn.textContent = "Explain what I'm showing"
+    }
+  }
+
+  function setLiveExplain(on) {
+    explain.live = on
+    clearInterval(explain.timer)
+    if (on) { explainNow(); explain.timer = setInterval(explainNow, 3500) }
+    else window.postMessage({ fingertip: 'annotate', items: [], live: false }, '*')
+  }
+
   function openSigning() {
     const popup = window.open(`${state.server}/#meet`, 'fingertip-signing', 'width=410,height=760')
     if (!popup) setStatus('Allow popups to open the signing camera.', 'error')
@@ -264,12 +316,12 @@
     shadow.innerHTML = `
       <style>
         *{box-sizing:border-box}.launcher{width:54px;height:54px;border:0;border-radius:18px;background:#6256ff;color:#fff;box-shadow:0 10px 30px rgba(20,12,80,.35);font:800 20px system-ui;cursor:pointer;float:right}
-        .panel{display:none;clear:both;width:min(360px,calc(100vw - 28px));margin-bottom:10px;padding:16px;border-radius:22px;background:#0f1320;color:#f7f8ff;border:1px solid rgba(255,255,255,.12);box-shadow:0 22px 70px rgba(0,0,0,.5);font:14px/1.35 system-ui,sans-serif}.panel[data-open="true"]{display:block}
+        .panel{display:none;clear:both;width:min(360px,calc(100vw - 28px));max-height:calc(100vh - 170px);overflow-y:auto;overscroll-behavior:contain;margin-bottom:10px;padding:16px;border-radius:22px;background:#0f1320;color:#f7f8ff;border:1px solid rgba(255,255,255,.12);box-shadow:0 22px 70px rgba(0,0,0,.5);font:14px/1.35 system-ui,sans-serif}.panel[data-open="true"]{display:block}
         h2{font-size:17px;margin:0}.eyebrow{color:#a8b0c9;font-size:11px;margin:3px 0 14px}label{display:block;color:#c8cde0;font-size:12px;font-weight:700;margin:10px 0 5px}
         select,textarea{width:100%;border:1px solid #30384e;border-radius:11px;background:#171d2c;color:#fff;padding:10px;font:14px system-ui}textarea{resize:vertical;min-height:62px}#ft-draft{min-height:76px}
         .row{display:flex;gap:8px;margin-top:9px}.row button{flex:1}button{border:0;border-radius:11px;padding:9px 11px;font:700 13px system-ui;cursor:pointer;background:#282f43;color:#fff}button[data-variant="primary"]{background:#655cff}button[data-variant="safe"]{background:#18a66d}
         button:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #9c95ff;outline-offset:2px}.checks{display:grid;gap:7px;margin:11px 0}.checks label{display:flex;align-items:flex-start;gap:8px;margin:0;font-weight:500;color:#d7daea}.checks input{margin-top:2px}
-        .hint{font-size:11px;color:#9fa7be}.status{margin-top:10px;padding:8px 10px;border-radius:10px;background:#1a2030;color:#cbd1e5;font-size:12px}.status[data-kind="good"]{background:#12382c;color:#b9f8dd}.status[data-kind="error"]{background:#411f29;color:#ffd0dc}
+        .hint{font-size:11px;color:#9fa7be}.explain{margin-top:14px;padding-top:12px;border-top:1px solid #2a3145}.explain h3{margin:0 0 4px;font-size:14px}#ft-ask{min-height:40px}.status{margin-top:10px;padding:8px 10px;border-radius:10px;background:#1a2030;color:#cbd1e5;font-size:12px}.status[data-kind="good"]{background:#12382c;color:#b9f8dd}.status[data-kind="error"]{background:#411f29;color:#ffd0dc}
       </style>
       <div class="panel" id="ft-panel" data-open="false" role="dialog" aria-label="Fingertip meeting assistant">
         <h2>Fingertip · ${platform}</h2><p class="eyebrow">Sign or type. Approved captions appear inside your camera video.</p>
@@ -279,6 +331,11 @@
         <label for="ft-draft">Review and edit before sharing</label><textarea id="ft-draft" placeholder="Your approved sentence appears here"></textarea>
         <div class="checks"><label><input type="checkbox" id="ft-burn" checked> <span><b>Captions in my camera</b> · everyone in the meeting sees them <span id="ft-cam" class="hint"></span></span></label><label><input type="checkbox" id="ft-chat"> Also post to Google Meet chat (best effort)</label><label><input type="checkbox" id="ft-voice"> Also request meeting voice (experimental)</label></div>
         <button id="ft-share" data-variant="safe">Show approved caption</button>
+        <div class="explain"><h3>Show &amp; explain <span class="hint">Alt+E</span></h3>
+          <p class="hint">Hold something up to your camera. The AI points out the important parts with labels everyone sees.</p>
+          <textarea id="ft-ask" placeholder="Optional: what should they notice? (e.g. which light is the problem)"></textarea>
+          <div class="row"><button id="ft-explain" data-variant="primary">Explain what I'm showing</button></div>
+          <div class="checks"><label><input type="checkbox" id="ft-live"> Keep explaining as I move it (live)</label><label><input type="checkbox" id="ft-clear-notes"> Clear labels</label></div></div>
         <p class="hint">Works in Chrome on Google Meet and Zoom Web. Install before joining (or turn your camera off/on once). Zoom Desktop and FaceTime are not supported.</p>
         <div class="status" id="ft-status" role="status">Nothing is shared until you choose Show approved caption.</div>
       </div><button class="launcher" id="ft-launcher" aria-label="Open Fingertip meeting assistant" aria-expanded="false">F</button>`
@@ -298,6 +355,13 @@
     shadow.getElementById('ft-prepare').addEventListener('click', prepareDraft)
     shadow.getElementById('ft-share').addEventListener('click', shareDraft)
     shadow.getElementById('ft-sign').addEventListener('click', openSigning)
+    shadow.getElementById('ft-explain').addEventListener('click', explainNow)
+    shadow.getElementById('ft-live').addEventListener('change', (e) => setLiveExplain(e.target.checked))
+    shadow.getElementById('ft-clear-notes').addEventListener('change', (e) => {
+      e.target.checked = false
+      shadow.getElementById('ft-live').checked = false
+      setLiveExplain(false)
+    })
     shadow.getElementById('ft-burn').addEventListener('change', (e) => {
       state.burn = e.target.checked
       window.postMessage({ fingertip: 'burn', on: state.burn }, '*')
@@ -346,6 +410,9 @@
     try { state.server = new URL(values.server).origin } catch { /* keep localhost */ }
   })
   window.addEventListener('message', receiveSigningMessage)
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'e' || e.key === 'E')) { e.preventDefault(); explainNow() }
+  }, true)
   const ready = () => buildPanel()
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready, { once: true })
   else ready()

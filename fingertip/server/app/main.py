@@ -193,6 +193,8 @@ async def lifespan(app: FastAPI):
             return None
         return {"name": os.getenv("SIGNER_NAME", ""), "knows_sign": c.contact.knows_sign, "kind": c.contact.kind}
     grok_voice.configure(_grok_ctx, hub.broadcast)
+    from .explain import warm_up
+    asyncio.create_task(warm_up())
     yield
 
 
@@ -1209,6 +1211,9 @@ from .rooms import router as rooms_router  # noqa: E402  browser video calls (mu
 
 app.include_router(rooms_router)
 app.include_router(grok_voice.router)
+from .explain import router as explain_router  # noqa: E402
+
+app.include_router(explain_router)
 
 _static = settings.static_dir or os.path.join(os.path.dirname(__file__), "..", "..", "app", "dist")
 if os.path.isdir(_static):

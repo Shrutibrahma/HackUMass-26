@@ -1,25 +1,41 @@
-# Fingertip Meeting Captions extension
+# Fingertip Meeting Captions (Chrome extension)
 
-This unpacked Manifest V3 extension adds an accessible, movable **local** caption overlay to Google Meet and
-Zoom Web. It offers AI Assist, Exact Words, and Captions Only preparation modes. The existing Fingertip camera
-pipeline opens in a separate panel so recognized text can be reviewed before it is shown or delivered.
+An AI accessibility layer over the meeting tools people already use. A Deaf or nonspeaking person signs or types
+in **Google Meet** or **Zoom Web** in Chrome, and everyone else sees the result **inside their camera video**.
+Nobody else installs anything.
 
-## Load locally
+## What it does
+- **Captions in your camera.** Approved text (Exact Words, AI Assist, or recognized signs) is drawn into your
+  outgoing camera frames, so every participant can read it.
+- **AI Assist.** "yes friday 3" becomes "Yeah, Friday at 3.". You review and edit before anything is shown.
+- **Signing.** "Open signing camera" opens the Fingertip signing window (on-device sign recognition, limited
+  vocabulary). Live partial signs show in your camera as you sign; the final sentence comes back for review.
+- **Show & explain (Alt+E).** Hold something up to the camera. The AI outlines the important parts and pins a
+  tooltip label to each, drawn into your video for everyone. Add a question ("which light is the problem?") to
+  focus it, or turn on **live** to keep labelling as you move it. Only that one still frame is sent to the server.
+- **Optional:** post to Meet chat (best effort), or voice the line into your mic (experimental).
 
-1. Start the Fingertip server and app (the default origin is `http://localhost:8000`).
-2. Open `chrome://extensions`, enable **Developer mode**, and choose **Load unpacked**.
-3. Select this `extension` folder.
-4. Open the extension's **Options**, save the app's server origin, then reload the meeting tab.
+## Install
+1. Run the Fingertip server and have its HTTPS URL ready (the cloudflared tunnel URL; see ../../DEMO.md).
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and pick this `extension` folder.
+3. Open the extension's **Options**, paste the server URL, and save (allow the permission prompt).
+4. Install **before** joining the meeting, or turn your camera off and on once, so the extension can add captions.
 
-Run `node validate.mjs` to validate the manifest and every file it declares. Run `node --check content.js`,
-`node --check inject.js`, and `node --check options.js` for syntax checks.
+## How it works
+`inject.js` runs in the page's main world at `document_start` and wraps `getUserMedia`. Each camera frame passes
+through a Chrome insertable-streams transform (with a canvas fallback) that draws the caption and the labels.
+The meeting sends that processed track.
 
-## Behavior and limits
+## Tests
+- `node validate.mjs`: manifest and files.
+- `python test_extension.py`: real Chromium with a fake camera. Checks that the caption is in the sent and
+  received video, AI Assist, and the signing-window hand-off.
+- `python test_explain.py`: the fake camera shows a router scene. Checks that Alt+E draws labels into the sent
+  video (makes a live Gemini call).
 
-- Local captions are reliable and remain visible only in the current browser tab.
-- Google Meet chat posting is opt-in and best-effort because Meet exposes no stable public DOM API for it.
-- Meeting voice is opt-in and experimental. It requires the configured server's `/api/tts` endpoint and a tab
-  reload before the meeting requests microphone access.
-- Zoom Web gets the local overlay; automated Zoom chat delivery is disabled.
-- The extension does not integrate with Zoom Desktop or native FaceTime and never claims that remote attendees
-  received a caption unless a delivery attempt reports success.
+## Limits (honest)
+- Chrome only, and only Meet and Zoom **web**. Not Zoom Desktop, Teams desktop, or FaceTime.
+- Meet shows your own self-view mirrored, so your captions look mirrored **to you only**. Everyone else sees
+  them the right way round.
+- Sign recognition covers a limited vocabulary, not full ASL translation.
+- Not yet run on a real Meet or Zoom call: tested on a stand-in meeting page in real Chromium.

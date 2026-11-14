@@ -30,7 +30,10 @@ A quick tunnel gets a new URL each restart, so re-run `point_twilio.py --apply` 
 8. **Video:** Home → "Video call with captions". Send Mom the invite link; she opens it in any phone browser (no app).
    Your signs are recognized on-device and appear as captions over your video on her screen ("✦ AI sentence" turns
    signs into a sentence; "🔊 Voice it" also speaks the line into the call audio; Gemini voice ≈4 s, faster with ELEVENLABS_API_KEY).
-9. **Extension:** chrome://extensions → Load unpacked → `fingertip/extension`, then open a Google Meet. Captions are local; chat posting is best effort.
+9. **Extension (Meet / Zoom web):** chrome://extensions → Load unpacked → `fingertip/extension`, then Options → paste the tunnel URL.
+   Join a Meet from a second laptop or phone as the viewer. Type `yes friday 3` in AI Assist → approve, and the caption
+   appears **inside your camera** on their screen. Hold up an object and press **Alt+E**: labelled tooltips appear on it
+   for everyone (~1.5–2 s).
 
 **Rehearsal / backup:** Home → "Rehearse: simulated call from Mom". A fully answerable scripted call, marked with an
 orange **SIMULATED DEMO** badge the whole time. No phone and no audio. Use it only if the real call fails, and say so.
