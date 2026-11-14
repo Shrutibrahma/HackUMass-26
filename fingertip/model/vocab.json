@@ -1,0 +1,439 @@
+{
+ "active": [
+  "AFTERNOON",
+  "AGAIN",
+  "APPOINTMENT",
+  "BUSY",
+  "CANCEL",
+  "CHANGE",
+  "COME",
+  "EIGHT",
+  "ELEVEN",
+  "FINE",
+  "FINISH",
+  "FOUR",
+  "FRIDAY",
+  "GO",
+  "HAPPY",
+  "HAVE",
+  "HELLO",
+  "HELP",
+  "HOME",
+  "LATER",
+  "LOVE",
+  "MAYBE",
+  "MONDAY",
+  "MORE",
+  "MORNING",
+  "NAME",
+  "NEED",
+  "NIGHT",
+  "NO",
+  "ONE",
+  "ORDER",
+  "PAY",
+  "PLEASE",
+  "READY",
+  "SATURDAY",
+  "SEVEN",
+  "SIX",
+  "SLOW",
+  "SMALL",
+  "SORRY",
+  "SUNDAY",
+  "THANK-YOU",
+  "THREE",
+  "THURSDAY",
+  "TIME",
+  "TIRED",
+  "TODAY",
+  "TOMORROW",
+  "TUESDAY",
+  "TWO",
+  "W.H.A.T",
+  "WAIT",
+  "WANT",
+  "WEDNESDAY",
+  "WEEK",
+  "WHEN",
+  "WHERE",
+  "YES",
+  "ZERO"
+ ],
+ "source": "model/validate_aslcitizen.py on ASL Citizen poses",
+ "measured": {
+  "AFTERNOON": {
+   "n": 4,
+   "r1": 3,
+   "best1": 3,
+   "bestv": 4
+  },
+  "AGAIN": {
+   "n": 5,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 4
+  },
+  "APPOINTMENT": {
+   "n": 6,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 6
+  },
+  "BUSY": {
+   "n": 6,
+   "r1": 2,
+   "best1": 2,
+   "bestv": 6
+  },
+  "CANCEL": {
+   "n": 3,
+   "r1": 2,
+   "best1": 3,
+   "bestv": 3
+  },
+  "CHANGE": {
+   "n": 4,
+   "r1": 3,
+   "best1": 3,
+   "bestv": 4
+  },
+  "COME": {
+   "n": 2,
+   "r1": 2,
+   "best1": 2,
+   "bestv": 2
+  },
+  "EIGHT": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "ELEVEN": {
+   "n": 5,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "FINE": {
+   "n": 6,
+   "r1": 2,
+   "best1": 6,
+   "bestv": 6
+  },
+  "FINISH": {
+   "n": 6,
+   "r1": 3,
+   "best1": 6,
+   "bestv": 6
+  },
+  "FOUR": {
+   "n": 5,
+   "r1": 0,
+   "best1": 5,
+   "bestv": 5
+  },
+  "FRIDAY": {
+   "n": 6,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 5
+  },
+  "GO": {
+   "n": 6,
+   "r1": 0,
+   "best1": 6,
+   "bestv": 6
+  },
+  "GOOD": {
+   "n": 5,
+   "r1": 1,
+   "best1": 1,
+   "bestv": 2
+  },
+  "HAPPY": {
+   "n": 6,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 5
+  },
+  "HAVE": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "HELLO": {
+   "n": 3,
+   "r1": 0,
+   "best1": 2,
+   "bestv": 3
+  },
+  "HELP": {
+   "n": 6,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 5
+  },
+  "HOME": {
+   "n": 3,
+   "r1": 2,
+   "best1": 2,
+   "bestv": 3
+  },
+  "LATER": {
+   "n": 6,
+   "r1": 0,
+   "best1": 5,
+   "bestv": 5
+  },
+  "LOVE": {
+   "n": 6,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 6
+  },
+  "MAYBE": {
+   "n": 4,
+   "r1": 0,
+   "best1": 4,
+   "bestv": 4
+  },
+  "MONDAY": {
+   "n": 6,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 6
+  },
+  "MORE": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "MORNING": {
+   "n": 5,
+   "r1": 0,
+   "best1": 4,
+   "bestv": 5
+  },
+  "NAME": {
+   "n": 5,
+   "r1": 0,
+   "best1": 4,
+   "bestv": 5
+  },
+  "NEED": {
+   "n": 5,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "NIGHT": {
+   "n": 6,
+   "r1": 2,
+   "best1": 6,
+   "bestv": 6
+  },
+  "NINE": {
+   "n": 1,
+   "r1": 1,
+   "best1": 1,
+   "bestv": 1
+  },
+  "NO": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "NOW": {
+   "n": 6,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 4
+  },
+  "ONE": {
+   "n": 6,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 6
+  },
+  "ORDER": {
+   "n": 5,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 5
+  },
+  "PAY": {
+   "n": 6,
+   "r1": 0,
+   "best1": 6,
+   "bestv": 6
+  },
+  "PLEASE": {
+   "n": 6,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 6
+  },
+  "READY": {
+   "n": 5,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "SATURDAY": {
+   "n": 6,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "SEVEN": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "SIX": {
+   "n": 6,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "SLOW": {
+   "n": 6,
+   "r1": 0,
+   "best1": 6,
+   "bestv": 6
+  },
+  "SMALL": {
+   "n": 4,
+   "r1": 3,
+   "best1": 3,
+   "bestv": 4
+  },
+  "SORRY": {
+   "n": 6,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 6
+  },
+  "SUNDAY": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "THANK-YOU": {
+   "n": 5,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "THREE": {
+   "n": 3,
+   "r1": 3,
+   "best1": 3,
+   "bestv": 3
+  },
+  "THURSDAY": {
+   "n": 5,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "TIME": {
+   "n": 4,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 4
+  },
+  "TIRED": {
+   "n": 6,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 6
+  },
+  "TODAY": {
+   "n": 3,
+   "r1": 3,
+   "best1": 3,
+   "bestv": 3
+  },
+  "TOMORROW": {
+   "n": 5,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 5
+  },
+  "TUESDAY": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "TWO": {
+   "n": 3,
+   "r1": 0,
+   "best1": 3,
+   "bestv": 3
+  },
+  "W.H.A.T": {
+   "n": 4,
+   "r1": 3,
+   "best1": 3,
+   "bestv": 4
+  },
+  "WAIT": {
+   "n": 5,
+   "r1": 4,
+   "best1": 4,
+   "bestv": 5
+  },
+  "WANT": {
+   "n": 6,
+   "r1": 4,
+   "best1": 5,
+   "bestv": 6
+  },
+  "WEDNESDAY": {
+   "n": 2,
+   "r1": 2,
+   "best1": 2,
+   "bestv": 2
+  },
+  "WEEK": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "WHEN": {
+   "n": 6,
+   "r1": 5,
+   "best1": 5,
+   "bestv": 6
+  },
+  "WHERE": {
+   "n": 4,
+   "r1": 2,
+   "best1": 2,
+   "bestv": 4
+  },
+  "YES": {
+   "n": 6,
+   "r1": 6,
+   "best1": 6,
+   "bestv": 6
+  },
+  "ZERO": {
+   "n": 5,
+   "r1": 3,
+   "best1": 3,
+   "bestv": 5
+  }
+ }
+}
+

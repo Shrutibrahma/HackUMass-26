@@ -1,0 +1,7 @@
+# Automatic HTTPS + WSS. Set DOMAIN in .env (an A record pointing at the Vultr box).
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:8000
+}
+
+

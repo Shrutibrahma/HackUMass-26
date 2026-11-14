@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Fingertip Meeting Captions",
+  "version": "0.2.0",
+  "description": "Prepare sign- or text-assisted replies and show accessible local captions in Google Meet and Zoom Web.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "optional_host_permissions": ["https://*/*"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://meet.google.com/*",
+        "https://app.zoom.us/wc/*",
+        "https://*.zoom.us/wc/*",
+        "https://zoom.us/j/*",
+        "https://*.zoom.us/j/*"
+      ],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["inject.js"],
+      "matches": [
+        "https://meet.google.com/*",
+        "https://app.zoom.us/*",
+        "https://*.zoom.us/*",
+        "https://zoom.us/*"
+      ]
+    }
+  ],
+  "options_page": "options.html"
+}

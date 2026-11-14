@@ -1,0 +1,24 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+node_modules/
+app/dist/
+logs/
+.env
+tokens.env
+*.env.local
+*.onnx.tmp
+model/data/
+# Source weights (re-download with model/download_models.sh); the runtime only needs signbart.onnx.
+model/signbart/model.safetensors
+model/islr/model.tflite
+# Show it clips (people's videos): never commit
+data/shows/
+server/data/
+
+# Claude Code: shared settings are committed; personal and machine-specific files are not
+.claude/settings.local.json
+.claude/launch.json
+
+

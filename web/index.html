@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TalkBridge</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">TalkBridge <span class="tag">Your hands. Your voice.</span></div>
+    <div class="right">
+      <span id="status" class="pill" role="status" aria-live="polite">Ready</span>
+      <span id="timer" class="timer" aria-label="Call duration"></span>
+      <label class="size">Caption size
+        <select id="size" aria-label="Caption size">
+          <option value="18">Small</option><option value="22" selected>Medium</option>
+          <option value="28">Large</option><option value="34">Extra large</option>
+        </select>
+      </label>
+    </div>
+  </header>
+
+  <main class="grid">
+    <section class="panel dial" aria-label="Dial">
+      <label for="to">Phone number</label>
+      <input id="to" type="tel" inputmode="tel" autocomplete="tel" placeholder="+1 413 555 0123">
+      <div class="row">
+        <button id="callBtn" class="primary">Call</button>
+        <button id="hangBtn" class="danger" disabled>Hang up</button>
+      </div>
+      <p id="dialMsg" class="fine" role="alert"></p>
+      <div id="health" class="fine"></div>
+    </section>
+
+    <section class="panel convo" aria-label="Conversation">
+      <ol id="turns" class="turns" aria-live="polite"></ol>
+      <div id="partial" class="partial" aria-live="off"></div>
+    </section>
+
+    <section class="panel reply" aria-label="Your reply">
+      <div class="label">Quick replies</div>
+      <div id="quick" class="chips"></div>
+      <div class="label">Suggestions <span id="aiSrc" class="fine"></span></div>
+      <div id="sugs" class="chips"><span class="fine">Suggestions appear after the caller speaks.</span></div>
+      <label class="label" for="draft">Type a few words or a full reply</label>
+      <textarea id="draft" rows="3" placeholder="e.g. yes 8 works"></textarea>
+      <div class="row">
+        <button id="expandBtn">Make it a sentence</button>
+        <button id="sendBtn" class="primary">Say it ⏎</button>
+      </div>
+      <p class="fine">Nothing is spoken until you tap. Enter = Say it, Shift+Enter = new line.</p>
+    </section>
+  </main>
+
+  <dialog id="confirm" aria-labelledby="confirmTitle">
+    <h2 id="confirmTitle">Say this?</h2>
+    <p id="confirmText" class="big"></p>
+    <p class="fine">It mentions money, an order or a booking.</p>
+    <div class="row">
+      <button id="confirmYes" class="primary">Yes, say it</button>
+      <button id="confirmNo">Not yet</button>
+    </div>
+  </dialog>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
+
+
