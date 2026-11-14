@@ -7,7 +7,8 @@ import { MeetingsPage } from './screens/Meet'
 import { Playground } from './screens/Playground'
 import { ShowFlow } from './screens/Show'
 import { VideoCall } from './screens/VideoCall'
-import { ContactPage, ErrandNote, Home, Settings, Tabs, VoicePicker, type Prefs, type Tab } from './screens/Setup'
+import { ErrandNote, type Prefs } from './screens/Setup'
+import { ContactCard, PhoneHome, SettingsIOS, VoicePickerIOS } from './screens/Phone'
 import { initial, reduce } from './store'
 import { load, save } from './storage'
 import type { CallView, Contact, Recent, SavedTranscript } from './types'
@@ -32,8 +33,22 @@ export default function App() {
   const [firstWords, setFirstWords] = useState<Record<string, string | null>>({})
   const [dialError, setDialError] = useState('')
   const [dialing, setDialing] = useState(false)
+  type Tab = 'call' | 'meetings' | 'play'
   const [tab, setTab] = useState<Tab>(() => (location.hash === '#meetings' ? 'meetings' : location.hash === '#play' ? 'play' : 'call'))
-  const tabs = <Tabs tab={tab} onTab={setTab} />
+  const [toast, setToast] = useState<{ text: string; bad?: boolean } | null>(null)
+  const toastTimer = useRef<number | undefined>(undefined)
+  const say = useCallback((text: string, bad = false) => {
+    setToast({ text, bad })
+    window.clearTimeout(toastTimer.current)
+    toastTimer.current = window.setTimeout(() => setToast(null), 4200)
+  }, [])
+  const [langs, setLangs] = useState<{ available: boolean; list: { code: string; name: string }[] } | null>(null)
+  useEffect(() => { fetch('/api/health').then((r) => r.json()).then((h) => setLangs(h.languages ?? null)).catch(() => {}) }, [])
+  // Direct link to a video room host screen: /#video=<room>
+  useEffect(() => {
+    const m = location.hash.match(/^#video=([\w-]+)$/)
+    if (m) setRoute({ name: 'video', room: m[1] })
+  }, [])
   const [myName, setMyName] = useState<string>(() => load('myName', ''))
   const [prefs, setPrefs] = useState<Prefs>(() => ({ quick: DEFAULT_QUICK, capScale: 1, introStyle: 'deaf', ...load<Partial<Prefs>>('prefs', {}) }))
   const [demoSids, setDemoSids] = useState<Set<string>>(() => new Set())
@@ -101,6 +116,19 @@ export default function App() {
     else startCall(c)
   }
 
+  const openVideo = useCallback(async () => {
+    try {
+      const r = await post<{ room: string }>('/api/rooms', {})
+      history.replaceState(null, '', `#video=${r.room}`)
+      setRoute({ name: 'video', room: r.room })
+    } catch (e: any) { say(`Couldn't start a video call: ${e.message}`, true) }
+  }, [say])
+  const closeVideo = () => { history.replaceState(null, '', location.pathname); setRoute({ name: 'home' }) }
+  const dial = (n: string) => {
+    const known = contacts.find((k) => sameNumber(k.number, n))
+    startCall(known ?? { id: '', name: '', number: n, knows_sign: false, kind: 'person' })
+  }
+
   const voiceName = VOICES.find((v) => v.id === voiceId)?.name ?? VOICES[0].name
   const active: CallView | null = s.activeSid ? s.calls[s.activeSid] ?? null : null
   const ringing = s.ringing ? s.calls[s.ringing.sid] : null
@@ -109,7 +137,7 @@ export default function App() {
   const screen = useMemo(() => {
     if (ringing && !active) {
       return <Incoming call={ringing}
-        onAnswer={() => post(`/api/calls/${ringing.sid}/answer`).catch((e) => alert(e.message))}
+        onAnswer={() => post(`/api/calls/${ringing.sid}/answer`).catch((e) => say(e.message, true))}
         onDecline={() => post(`/api/calls/${ringing.sid}/decline`).catch(() => {})} />
     }
     if (active) {
@@ -117,7 +145,7 @@ export default function App() {
         return <Calling call={active} voiceId={voiceId ?? VOICES[0].id} firstWords={firstWords[active.sid] ?? null}
           onCancel={() => post(`/api/calls/${active.sid}/hangup`).catch(() => {})} />
       }
-      return <InCall call={active} online={online} dispatch={dispatch} quick={prefs.quick} capScale={prefs.capScale} />
+      return <InCall call={active} online={online} dispatch={dispatch} quick={prefs.quick} capScale={prefs.capScale} demo={demoSids.has(active.sid)} />
     }
     if (ended) {
       const back = contacts.find((k) => k.id === ended.contact.id || sameNumber(k.number, ended.contact.number))
@@ -133,24 +161,25 @@ export default function App() {
     }
     switch (route.name) {
       case 'voice':
-        return <VoicePicker current={voiceId} onDone={(id) => { setVoiceId(id); save('voice', id); setRoute(route.back) }} />
+        return <VoicePickerIOS current={voiceId} first={!voiceId} onDone={(id) => { setVoiceId(id); save('voice', id); setRoute(route.back) }} />
       case 'inperson':
         return <InPerson myName={myName} onDone={() => setRoute({ name: 'home' })} />
       case 'video':
-        return <VideoCall room={route.room} onClose={() => setRoute({ name: 'home' })} />
+        return <VideoCall room={route.room} onClose={closeVideo} />
       case 'show':
         return <ShowFlow onClose={() => setRoute({ name: 'home' })} />
       case 'settings':
-        return <Settings prefs={prefs} voiceName={voiceName} onChange={setPrefs}
-          onVoice={() => setRoute({ name: 'voice', back: { name: 'settings' } })} onBack={() => setRoute({ name: 'home' })} />
+        return <SettingsIOS prefs={prefs} voiceName={voiceName} onChange={setPrefs}
+          onVoice={() => setRoute({ name: 'voice', back: { name: 'settings' } })} onBack={() => setRoute({ name: 'home' })}
+          onMeetings={() => { setTab('meetings'); setRoute({ name: 'home' }) }} onPlayground={() => { setTab('play'); setRoute({ name: 'home' }) }} />
       case 'contact': {
         const c = contacts.find((x) => x.id === route.id)
         if (!c) return null
-        return <>
-          <ContactPage contact={c} voiceName={voiceName} onChange={updateContact} onBack={() => { setDialError(''); setRoute({ name: 'home' }) }}
-            onCall={(cc) => { updateContact(cc); openCallFlow(cc) }} onVoice={() => setRoute({ name: 'voice', back: route })} />
-          {dialError && <div className="err" role="alert" style={{ position: 'fixed', left: 16, right: 16, bottom: 96, maxWidth: 408, margin: '0 auto' }}>{dialError}</div>}
-        </>
+        return <ContactCard contact={c} voiceName={voiceName} langs={langs} error={dialError} onChange={updateContact}
+          onBack={() => { setDialError(''); setRoute({ name: 'home' }) }}
+          onCall={(cc) => { updateContact(cc); openCallFlow(cc) }} onVoice={() => setRoute({ name: 'voice', back: route })}
+          onVideo={openVideo}
+          onDelete={() => { setContacts((cs) => cs.filter((x) => x.id !== c.id)); setRoute({ name: 'home' }) }} />
       }
       case 'note':
         return <ErrandNote contact={route.contact} busy={dialing} error={dialError}
@@ -163,31 +192,27 @@ export default function App() {
       default:
         // Playground and Meetings never run during a call: calls take over the screen above.
         if (tab === 'play') return <Playground onBack={() => setTab('call')} />
-        if (tab === 'meetings') return <MeetingsPage tabs={tabs} />
-        return <Home contacts={contacts} recents={recents} online={online} tabs={tabs}
+        if (tab === 'meetings') return <MeetingsPage tabs={<button className="ios-link" style={{ padding: '12px 16px' }} onClick={() => setTab('call')}>‹ Phone</button>} />
+        return <PhoneHome contacts={contacts} recents={recents} online={online}
           onOpen={(c) => setRoute({ name: 'contact', id: c.id })}
-          onDial={(n) => {
-            const known = contacts.find((k) => sameNumber(k.number, n))
-            startCall(known ?? { id: '', name: '', number: n, knows_sign: false, kind: 'person' })
-          }}
-          onInPerson={() => setRoute({ name: 'inperson' })}
-          onShow={() => setRoute({ name: 'show' })}
-          onVideo={async () => {
-            try {
-              const r = await post<{ room: string }>('/api/rooms', {})
-              setRoute({ name: 'video', room: r.room })
-            } catch (e: any) { alert(e.message) }
-          }}
+          onCall={(c) => openCallFlow(c)}
+          onDial={dial}
+          onVideo={openVideo}
           onSettings={() => setRoute({ name: 'settings' })}
-          onDemo={() => post('/api/demo/incoming', { name: 'Mom' }).catch((e) => alert(e.message))} />
+          onAddContact={(c) => { setContacts((cs) => [...cs, c]); say(`${c.name} added`) }}
+          onClearRecents={() => setRecents([])}
+          onDemo={() => post('/api/demo/incoming', { name: 'Mom' }).catch((e) => say(`Rehearsal couldn't start: ${e.message}`, true))} />
     }
-  }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs, langs, demoSids, openVideo, say])
 
   const shownSid = (ringing && !active) ? ringing.sid : active?.sid
   const isDemo = !!shownSid && demoSids.has(shownSid)
-  return isDemo
-    ? <>{screen}<div className="demo-badge" role="status">SIMULATED DEMO · no real phone call</div></>
-    : screen
+  return <>
+    {screen}
+    {isDemo && <div className="demo-badge" role="status">SIMULATED · rehearsal, no real phone call</div>}
+    {toast && <div className={`ios-toast app-toast ios-material-thick ${toast.bad ? 'bad' : ''}`} role="status">{toast.text}</div>}
+  </>
 }
 
 

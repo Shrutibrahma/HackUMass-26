@@ -1,6 +1,8 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
+import './ios.css'
+import './ios-call.css'
 import App from './App'
 import Gallery from './Gallery'
 import { MeetLive } from './screens/Meet'
