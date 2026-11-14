@@ -6,12 +6,12 @@
 .ft { position: relative; overflow: hidden; background: #000; color: #fff; user-select: none; -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent; --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
   --chrome-h: 120px; --cap-scale: 1; --top-h: 64px; }
-.ft button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
-.ft svg { display: block; flex: none; }
-.ft input { font: inherit; }
+:where(.ft) button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:where(.ft) svg { display: block; flex: none; }
+:where(.ft) input { font: inherit; }
 
 /* ---- video tiles: one is full-bleed (.big), the other is the floating picture-in-picture (.pip) */
-.ft-stage { position: absolute; inset: 0; }
+.ft-stage { position: absolute; inset: 0; container-type: size; }
 .ft-tile { position: absolute; left: 0; top: 0; overflow: hidden; background: #1c1c1e;
   transition: transform .3s var(--ease), width .3s var(--ease), height .3s var(--ease), border-radius .3s var(--ease), opacity .3s var(--ease); }
 .ft-tile.big { width: 100%; height: 100%; border-radius: 0; z-index: 1; transform: none; }
@@ -22,7 +22,7 @@
 .ft-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: transparent; }
 .ft-tile.self video { transform: scaleX(-1); }
 .ft-tile .ft-backdrop { display: none; filter: blur(36px) brightness(.55) saturate(1.3); transform: scale(1.2); }
-@media (min-aspect-ratio: 5/4) {
+@container (min-aspect-ratio: 5/4) {
   .ft-tile.big.remote video.main { object-fit: contain; }
   .ft-tile.big.remote .ft-backdrop { display: block; }
 }
@@ -61,7 +61,7 @@
 .ft-pill .ft-avatar { width: 36px; height: 36px; }
 .ft-pill .txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .ft-pill b { font: 600 15px/1.2 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ft-pill span { font: 400 13px/1.2 var(--font); color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.ft-pill .txt > span { font: 400 13px/1.2 var(--font); color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; }
 .ft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sys-orange); flex: none; animation: ios-pulse 1.4s ease-in-out infinite; }
 .ft-dot.ok { background: var(--sys-green); animation: none; }
@@ -111,6 +111,8 @@
 .ft-chipbtn { min-height: 36px; padding: 0 16px; border-radius: 18px; font: 600 15px var(--font); background: rgba(255,255,255,.14); color: #fff;
   display: inline-flex; align-items: center; gap: 6px; }
 .ft-chipbtn.primary { background: var(--sys-blue); }
+.ft-chipbtn.ghost { background: none; color: var(--sys-blue); }
+.ft-x { width: 28px; height: 28px; margin: -6px -4px -6px 0; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.12); color: var(--label-2); }
 .ft-chipbtn:disabled { opacity: .4; }
 
 /* ---- live captions card (iOS Live Captions look) */
@@ -231,6 +233,7 @@
 .ft-stepper button + button { box-shadow: -.5px 0 0 rgba(84,84,88,.9); }
 .ft-stepper button:disabled { opacity: .35; }
 
+.ft.has-panel .ft-top, .ft.has-panel .ft-bottom, .ft.has-panel .ft-caption, .ft.has-panel .ft-center, .ft.has-panel .ft-dim { display: none; }
 .ft .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 @keyframes ft-fade { from { opacity: 0; } }

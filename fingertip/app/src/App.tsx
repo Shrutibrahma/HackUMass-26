@@ -21,7 +21,7 @@ type Route =
   | { name: 'inperson' }
   | { name: 'settings' }
   | { name: 'show' }
-  | { name: 'video'; room: string }
+  | { name: 'video'; room: string; peer?: string }
 
 export default function App() {
   const [s, dispatch] = useReducer(reduce, initial)
@@ -43,7 +43,14 @@ export default function App() {
     toastTimer.current = window.setTimeout(() => setToast(null), 4200)
   }, [])
   const [langs, setLangs] = useState<{ available: boolean; list: { code: string; name: string }[] } | null>(null)
-  useEffect(() => { fetch('/api/health').then((r) => r.json()).then((h) => setLangs(h.languages ?? null)).catch(() => {}) }, [])
+  const [publicBase, setPublicBase] = useState('')
+  useEffect(() => {
+    fetch('/api/health').then((r) => r.json()).then((h) => {
+      setLangs(h.languages ?? null)
+      const pub = String(h.webhooks?.incoming_voice ?? '').replace(/\/twilio\/voice$/, '')
+      if (/^https:\/\//.test(pub)) setPublicBase(pub)
+    }).catch(() => {})
+  }, [])
   // Direct link to a video room host screen: /#video=<room>
   useEffect(() => {
     const m = location.hash.match(/^#video=([\w-]+)$/)
@@ -121,11 +128,11 @@ export default function App() {
     else startCall(c)
   }
 
-  const openVideo = useCallback(async () => {
+  const openVideo = useCallback(async (peer?: string) => {
     try {
       const r = await post<{ room: string }>('/api/rooms', {})
       history.replaceState(null, '', `#video=${r.room}`)
-      setRoute({ name: 'video', room: r.room })
+      setRoute({ name: 'video', room: r.room, peer })
     } catch (e: any) { say(`Couldn't start a video call: ${e.message}`, true) }
   }, [say])
   const closeVideo = () => { history.replaceState(null, '', location.pathname); setRoute({ name: 'home' }) }
@@ -176,7 +183,7 @@ export default function App() {
       case 'inperson':
         return <InPerson myName={myName} onDone={() => setRoute({ name: 'home' })} />
       case 'video':
-        return <VideoCall room={route.room} onClose={closeVideo} />
+        return <VideoCall room={route.room} peer={route.peer} publicBase={publicBase} onClose={closeVideo} />
       case 'show':
         return <ShowFlow onClose={() => setRoute({ name: 'home' })} />
       case 'settings':
@@ -189,7 +196,7 @@ export default function App() {
         return <ContactCard contact={c} voiceName={voiceName} langs={langs} error={dialError} onChange={updateContact}
           onBack={() => { setDialError(''); setRoute({ name: 'home' }) }}
           onCall={(cc) => { updateContact(cc); openCallFlow(cc) }} onVoice={() => setRoute({ name: 'voice', back: route })}
-          onVideo={openVideo}
+          onVideo={() => openVideo(c.name)}
           onDelete={() => { setContacts((cs) => cs.filter((x) => x.id !== c.id)); setRoute({ name: 'home' }) }} />
       }
       case 'note':
@@ -208,14 +215,14 @@ export default function App() {
           onOpen={(c) => setRoute({ name: 'contact', id: c.id })}
           onCall={(c) => openCallFlow(c)}
           onDial={dial}
-          onVideo={openVideo}
+          onVideo={() => openVideo()}
           onSettings={() => setRoute({ name: 'settings' })}
           onAddContact={(c) => { setContacts((cs) => [...cs, c]); say(`${c.name} added`) }}
           onClearRecents={() => setRecents([])}
           onDemo={() => post('/api/demo/incoming', { name: 'Mom' }).catch((e) => say(`Rehearsal couldn't start: ${e.message}`, true))} />
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs, langs, demoSids, openVideo, say, answerAnim])
+  }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs, langs, demoSids, openVideo, say, answerAnim, publicBase])
 
   return <>
     {screen}

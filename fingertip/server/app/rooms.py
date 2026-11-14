@@ -13,12 +13,21 @@ from .config import settings
 
 router = APIRouter()
 
-_PAGE = (Path(__file__).parent / "static" / "video.html").read_text(encoding="utf-8")
+_PAGE_PATH = Path(__file__).parent / "static" / "video.html"
+
+
+def _page() -> str:
+    # Read per request so edits to the guest page ship without a server restart (it is small).
+    return _PAGE_PATH.read_text(encoding="utf-8")
 
 MAX_PEERS = 2
 # room id -> list of connected sockets
 _rooms: dict[str, list[WebSocket]] = {}
 _known: set[str] = set()
+# socket -> client id (one per browser tab), so a tab that reconnects after a network drop
+# replaces its own stale socket instead of being told the room is full.
+_cid: dict[int, str] = {}
+_evicted: set[int] = set()
 
 
 class CaptionBody(BaseModel):
@@ -52,7 +61,7 @@ async def ice_servers():
 
 @router.get("/v/{room}", response_class=HTMLResponse)
 async def room_page(room: str):
-    return HTMLResponse(_PAGE, headers={"Cache-Control": "no-store"})
+    return HTMLResponse(_page(), headers={"Cache-Control": "no-store"})
 
 
 @router.post("/api/rooms/{room}/caption")
@@ -69,15 +78,27 @@ async def push_caption(room: str, body: CaptionBody):
 
 
 @router.websocket("/ws/room/{room}")
-async def room_ws(ws: WebSocket, room: str):
+async def room_ws(ws: WebSocket, room: str, cid: str | None = None):
     await ws.accept()
     peers = _rooms.setdefault(room, [])
+    cid = (cid or "")[:64] or None
+    if cid:
+        # Same tab reconnecting (its old socket may not have timed out yet): drop the stale one quietly.
+        for old in [o for o in peers if _cid.get(id(o)) == cid]:
+            peers.remove(old)
+            _evicted.add(id(old))
+            try:
+                await old.close()
+            except Exception:
+                pass
     if len(peers) >= MAX_PEERS:
         await ws.send_json({"type": "full"})
         await ws.close()
         return
     others = list(peers)
     peers.append(ws)
+    if cid:
+        _cid[id(ws)] = cid
     _known.add(room)
     # The first peer is polite=False (initiates on peer-joined); the second is polite.
     await ws.send_json({"type": "joined", "peers": len(peers), "polite": len(others) > 0})
@@ -100,13 +121,17 @@ async def room_ws(ws: WebSocket, room: str):
     except (WebSocketDisconnect, RuntimeError, ValueError):
         pass
     finally:
-        lst = _rooms.get(room, [])
-        if ws in lst:
-            lst.remove(ws)
-        for o in list(lst):
-            try:
-                await o.send_json({"type": "peer-left"})
-            except Exception:
-                pass
-        if not lst:
-            _rooms.pop(room, None)
+        _cid.pop(id(ws), None)
+        if id(ws) in _evicted:
+            _evicted.discard(id(ws))   # replaced by the same tab: the other peer keeps its call
+        else:
+            lst = _rooms.get(room, [])
+            if ws in lst:
+                lst.remove(ws)
+            for o in list(lst):
+                try:
+                    await o.send_json({"type": "peer-left"})
+                except Exception:
+                    pass
+            if not lst:
+                _rooms.pop(room, None)

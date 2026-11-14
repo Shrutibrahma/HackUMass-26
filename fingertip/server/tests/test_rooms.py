@@ -66,3 +66,34 @@ def test_caption_post_delivered_to_both():
 def test_unknown_room_404():
     r = client.post("/api/rooms/nope/caption", json={"text": "x", "final": True})
     assert r.status_code == 404
+
+
+def test_same_tab_reconnect_replaces_stale_socket():
+    room = _room()["room"]
+    with client.websocket_connect(f"/ws/room/{room}?cid=tabA") as a:
+        a.receive_json()
+        with client.websocket_connect(f"/ws/room/{room}?cid=tabB") as b:
+            b.receive_json(); a.receive_json()  # joined, peer-joined
+            # tab B's network drops but its old socket is still open server-side; it reconnects
+            with client.websocket_connect(f"/ws/room/{room}?cid=tabB") as b2:
+                jb = b2.receive_json()
+                assert jb["type"] == "joined" and jb["peers"] == 2
+                assert a.receive_json() == {"type": "peer-joined"}
+                b2.send_json({"type": "caption", "text": "back", "final": True})
+                assert a.receive_json()["text"] == "back"
+            assert a.receive_json() == {"type": "peer-left"}
+
+
+def test_third_distinct_tab_still_full():
+    room = _room()["room"]
+    with client.websocket_connect(f"/ws/room/{room}?cid=x1") as a, \
+            client.websocket_connect(f"/ws/room/{room}?cid=x2") as b:
+        a.receive_json(); b.receive_json(); a.receive_json()
+        with client.websocket_connect(f"/ws/room/{room}?cid=x3") as c:
+            assert c.receive_json() == {"type": "full"}
+
+
+def test_page_reads_fresh_and_is_guest_ui():
+    d = _room()
+    r = client.get(f"/v/{d['room']}")
+    assert 'id="prejoin"' in r.text and "Live Captions" in r.text
