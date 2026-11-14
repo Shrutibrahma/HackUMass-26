@@ -37,7 +37,7 @@ function SwipeToAnswer({ onAnswer }: { onAnswer: () => void }) {
   )
 }
 
-export function Incoming({ call, onAnswer, onDecline }: { call: CallView; onAnswer: () => void; onDecline: () => void }) {
+export function Incoming({ call, onAnswer, onDecline, demo = false }: { call: CallView; onAnswer: () => void; onDecline: () => void; demo?: boolean }) {
   useEffect(() => { try { navigator.vibrate?.([400, 200, 400, 200, 400]) } catch { /* not supported */ } }, [])
   const [answering, setAnswering] = useState(false)
   const c = call.contact
@@ -47,6 +47,7 @@ export function Incoming({ call, onAnswer, onDecline }: { call: CallView; onAnsw
       <div className="call-backdrop" aria-hidden><IOSAvatar name={c.name} size="xl" business={c.kind === 'business'} /></div>
       <StatusBar />
       <div className="call-top">
+        {demo && <div className="demo-pill">Rehearsal · simulated call, no real phone</div>}
         <div className="call-kicker">{answering ? 'Connecting…' : 'mobile'}</div>
         <h1 className="call-name">{c.name || 'Unknown caller'}</h1>
         <div className="call-cap"><SFCaptions size={15} /> Live captions on · reply by signing or typing</div>
@@ -455,7 +456,7 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
       {myTurn ? chipRow(chipList.length ? chipList : mine, chipList.length ? 'Suggested replies' : 'Your quick replies') : !waiting && chipRow(mine, 'Your quick replies')}
       <div className="ic-listen">
         <Wave on={st === 'CALLER_TALKING'} />
-        <span>{waiting ? 'Connecting the call…' : myTurn ? (unclear ? 'Didn’t catch that. Ask them to repeat?' : 'Your turn: sign, tap or type') : `Listening to ${name}…`}</span>
+        <span>{waiting ? 'Connecting the call…' : myTurn ? (unclear ? 'Didn’t catch that. Ask them to repeat?' : 'Your turn') : `Listening to ${name}…`}</span>
         {!waiting && !preview && <button className="ic-pill-btn" onClick={() => setShowing(true)} aria-label="Show it: film something instead of describing it"><SFVideo size={14} /> Show it</button>}
       </div>
       {composer}
@@ -467,9 +468,10 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
   return (
     <div className={`screen ios incall ${flash ? 'flash' : ''}`} style={{ ['--cap' as string]: capScale }}>
       <StatusBar />
+      {demo && <div className="demo-strip" role="status">Rehearsal · simulated, no real phone line</div>}
       <header className="ic-head">
         <IOSAvatar name={name} size="sm" business={call.contact.kind === 'business'} />
-        <div className="ic-who"><b>{name}</b><span className={reconnecting ? 'warn' : ''}>{status}{demo ? ' · simulated' : ''}</span></div>
+        <div className="ic-who"><b>{name}</b><span className={reconnecting ? 'warn' : ''}>{status}</span></div>
         <button className="ic-end" onClick={() => act('hangup')} aria-label="End call"><SFPhoneDown size={24} /></button>
       </header>
       <div className="ic-modes">

@@ -159,3 +159,17 @@
 .gframe .phone .ios-scrim { position: absolute; }
 .ios .answer-slider::before, .ios .answer-slider::after { content: none !important; display: none !important; }
 .ios .answer-slider { border: 0; box-shadow: none; }
+.demo-strip { flex: none; margin: 4px 12px 6px; padding: 6px 10px; border-radius: 10px; background: rgba(255,159,10,.16); color: #ffcf85; font-size: 12px; font-weight: 600; text-align: center; }
+.demo-pill { display: inline-block; margin-bottom: 10px; padding: 5px 12px; border-radius: 99px; background: rgba(255,159,10,.2); color: #ffcf85; font-size: 12px; font-weight: 600; }
+.ic-listen > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ic-listen .ic-pill-btn { padding: 6px 10px; font-size: 12px; }
+.ic-editbox:focus-visible, .ic-composer input:focus-visible { outline: none; }
+.ic-editbox:focus { box-shadow: 0 0 0 3px rgba(10,132,255,.25); }
+.ic-composer:focus-within { border-color: var(--sys-blue); }
+.ic-listen > span { text-align: left; }
+.note-ios { width: 100%; min-height: 96px; resize: none; background: none; border: 0; outline: 0; color: var(--label); font: 17px/1.35 var(--font); padding: 10px 12px; }
+.note-ios::placeholder { color: var(--label-3); }
+.note-tags { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 16px; }
+.note-tags span { padding: 6px 12px; border-radius: 99px; font-size: 15px; }
+.note-tags .blue { background: rgba(10,132,255,.18); color: #a8d1ff; }
+.note-tags .amber { background: rgba(255,159,10,.18); color: #ffd18a; }

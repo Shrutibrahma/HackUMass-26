@@ -136,7 +136,7 @@ export default function App() {
 
   const screen = useMemo(() => {
     if (ringing && !active) {
-      return <Incoming call={ringing}
+      return <Incoming call={ringing} demo={demoSids.has(ringing.sid)}
         onAnswer={() => post(`/api/calls/${ringing.sid}/answer`).catch((e) => say(e.message, true))}
         onDecline={() => post(`/api/calls/${ringing.sid}/decline`).catch(() => {})} />
     }
@@ -206,11 +206,8 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ringing, active, ended, route, contacts, recents, online, voiceId, voiceName, firstWords, dialError, dialing, startCall, myName, tab, prefs, langs, demoSids, openVideo, say])
 
-  const shownSid = (ringing && !active) ? ringing.sid : active?.sid
-  const isDemo = !!shownSid && demoSids.has(shownSid)
   return <>
     {screen}
-    {isDemo && <div className="demo-badge" role="status">SIMULATED · rehearsal, no real phone call</div>}
     {toast && <div className={`ios-toast app-toast ios-material-thick ${toast.bad ? 'bad' : ''}`} role="status">{toast.text}</div>}
   </>
 }
