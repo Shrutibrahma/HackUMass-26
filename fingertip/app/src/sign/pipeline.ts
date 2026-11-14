@@ -22,7 +22,7 @@ export type PipelineEvents = {
 const round = (pts: [number, number][] | null) => (pts ? pts.map(([x, y]) => [Math.round(x * 1e4) / 1e4, Math.round(y * 1e4) / 1e4]) : null)
 
 export function wireFrames(frames: Frame[]) {
-  return frames.map((f) => ({ pose: round(f.pose), lh: round(f.lh), rh: round(f.rh) }))
+  return frames.map((f) => ({ pose: round(f.pose), lh: round(f.lh), rh: round(f.rh), fx: round(f.fx ?? null), t: Math.round(f.t) }))
 }
 
 export class SignPipeline {

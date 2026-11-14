@@ -25,7 +25,7 @@ def test_option_glosses():
 def test_config_and_short_segment():
     with TestClient(app) as c:
         cfg = c.get("/api/signs/config").json()
-        assert cfg["ready"] and "YES" in cfg["vocab"] and "SUNDAY" in cfg["vocab"]
+        assert cfg["ready"] and "YES" in cfg["vocab"] and "HELLO" in cfg["vocab"]
         r = c.post("/api/signs/classify", json={"frames": [{}, {}]}).json()
         assert r["ok"] is False
         r = c.post("/api/signs/classify", json={"frames": [{"pose": None, "lh": None, "rh": None}] * 10}).json()

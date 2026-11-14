@@ -1,3 +1,25 @@
+# Live sign engine: Google ISLR (Kaggle 1st place), 55 signs
+
+**Why it changed:** in live use on a laptop webcam, SignBart answered EIGHT at 98% confidence for unrelated signs.
+The ISLR model was trained on MediaPipe Holistic landmarks from Deaf signers recording on their own phones
+and webcams (Google's "Isolated Sign Language Recognition" Kaggle competition), which is what the app sends.
+
+**Held-out check:** ASL Citizen clips are a different dataset with different signers, so ISLR never saw them.
+- 632 clips, restricted to the 55 signs: **96.5% top-1**.
+- With the unsure rule (p < 0.45 or margin < 0.15 → the app asks), 94% are said directly and 1.4% are said wrong.
+- Through the live HTTP endpoint, in the browser's wire format (76 face points, 10 fps): **99/100**.
+- Without face points: 70% (all 250 signs) vs 80% with them. The 76 lip, nose and eye points give the same result as all 468.
+
+Signs: ALL BAD BED BEFORE BETTER BYE CAR CAT DAD FIND FINE FINISH FIRST GIVE GO HAPPY HAVE HEAR HELLO HOME HOT
+HUNGRY LATER LIKE MAD MAKE MANY MILK MOM NIGHT NO NOT NOW OUTSIDE PERSON PLEASE QUIET READ SAD SAME SEE SLEEP STAY
+THANK-YOU THINK THIRSTY TOMORROW WAIT WATER WE WHERE WHO WHY YES YESTERDAY.
+Dropped (below 80% within the set): HATE LISTEN TALK DRINK AFTER TIME WILL SICK DOG MORNING CRY MY CAN BROTHER.
+Scripts: eval/conversation50/islr_pick.py. Engine switch: SIGN_ENGINE=signbart.
+
+---
+
+# Previous engine (SignBart, ASL Citizen 2,730)
+
 # The 50 conversation signs: check on real signers
 
 500 ASL Citizen clips (HF `SorensenAI/asl-citizen-poses`), 10 random clips per sign, many different signers.

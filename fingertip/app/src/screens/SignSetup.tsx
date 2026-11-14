@@ -1,5 +1,5 @@
 /**
- * Settings → Signing. Practise the 50 conversation signs and teach the app your own.
+ * Settings → Signing. Practise the 55 built-in signs and teach the app your own.
  * - Practise: sign anything; each sign appears as you finish it (pause between signs).
  * - Teach: pick a sign (or type any word, in any sign language), sign it 3 times.
  *   Your examples win over the built-in model when they match. Landmarks only, never video.
@@ -137,7 +137,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
         </div>
         <p className="ios-section-f">Sign it {TIMES} times and the app learns your version. Only hand positions are saved, never video.</p>
 
-        <div className="ios-section-h">The 50 everyday signs</div>
+        <div className="ios-section-h">The {cfg?.conversation.length ?? 55} signs it knows</div>
         <div className="ios-search"><input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search" aria-label="Search signs" /></div>
         <div className="ios-group">
           {conv.map((s) => (
@@ -147,7 +147,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
               <button className="ios-link" onClick={async () => { if (personal[s]) await forget(s); startTeach(s) }}>{personal[s] ? 'Redo' : 'Tune to me'}</button>
             </div>))}
         </div>
-        <p className="ios-section-f">ASL. If one keeps coming out wrong, tap “Tune to me” and sign it 3 times. Anything else, type it in the call.</p>
+        <p className="ios-section-f">ASL, recognised with Google’s MediaPipe sign model (Kaggle ISLR winner). If one keeps coming out wrong, tap “Tune to me” and sign it 3 times. Need a word that isn’t here, like “sorry” or “help”? Teach it above.</p>
         <div style={{ height: 28 }} />
       </div>
     </div>

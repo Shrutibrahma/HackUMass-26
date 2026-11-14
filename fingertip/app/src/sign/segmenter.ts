@@ -9,7 +9,8 @@
  * handshape changes still counts), in shoulder widths per second.
  */
 export type P = [number, number]
-export type Frame = { t: number; pose: P[] | null; lh: P[] | null; rh: P[] | null }
+/** fx: the 76 lip, nose and eye points the ISLR model reads (FACE_KEEP order), holistic tracker only. */
+export type Frame = { t: number; pose: P[] | null; lh: P[] | null; rh: P[] | null; fx?: P[] | null }
 
 export type SegParams = {
   vMove: number      // speed that counts as signing

@@ -25,6 +25,8 @@ import secrets
 import struct
 import time
 import wave
+
+from .signs.models import MODEL_DIR
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Optional
@@ -837,10 +839,23 @@ async def signs_classify(body: ClassifyIn, key: Optional[str] = None) -> dict:
     c = sessions.get(body.sid or "")
     if c and c.analysis:
         options = c.analysis.options
-    r = await asyncio.to_thread(state["signs"].classify, body.frames[:240], body.hand, options)
+    fr = body.frames[:240]
+    r = await asyncio.to_thread(state["signs"].classify, fr, body.hand, options)
+    # What the camera actually delivered: frames, duration, how often each hand and the face were seen.
+    n = max(len(fr), 1)
+    ts = [f.get("t") for f in fr if isinstance(f.get("t"), (int, float))]
+    dur = (ts[-1] - ts[0]) / 1000 if len(ts) > 1 else 0.0
+    seen = {k: round(sum(1 for f in fr if f.get(k)) / n, 2) for k in ("pose", "lh", "rh", "fx")}
     if r.get("ok"):
         latency.record("sign_classify_ms", r["ms"])
-        log.info("sign %s unsure=%s top=%s p=%s", r["sign"], r["unsure"], r.pop("_top"), r.pop("_p"))
+        log.info("sign %s unsure=%s top=%s p=%s | %d frames %.1fs %.0ffps seen=%s hand=%s", r["sign"], r["unsure"],
+                 r.pop("_top"), r.pop("_p"), len(fr), dur, len(fr) / dur if dur else 0, seen, body.hand)
+    try:  # last 200 live segments, landmarks only, for debugging recognition on this machine
+        os.makedirs(os.path.join(MODEL_DIR, "data"), exist_ok=True)
+        with open(os.path.join(MODEL_DIR, "data", "live.jsonl"), "a") as f:
+            f.write(json.dumps({"t": time.time(), "hand": body.hand, "sign": r.get("sign"), "frames": fr}) + "\n")
+    except Exception:
+        pass
     return r
 
 

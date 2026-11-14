@@ -66,7 +66,7 @@ def test_conversation_vocab_is_active():
     svc = SignService()
     if not svc.ready:
         pytest.skip("sign model not available")
-    assert len(svc.conversation) == 50
+    assert 50 <= len(svc.conversation) <= 60
     assert set(svc.conversation) <= set(svc.active)
-    for s in ("HELLO", "THANK-YOU", "WHAT", "BATHROOM", "UNDERSTAND"):
+    for s in ("HELLO", "THANK-YOU", "YES", "NO", "WHERE", "MOM"):
         assert s in svc.conversation

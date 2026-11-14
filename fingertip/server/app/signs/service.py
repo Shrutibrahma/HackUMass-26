@@ -19,7 +19,7 @@ import threading
 import time
 from typing import Optional
 
-from .models import MODEL_DIR, Guess, SignBartModel
+from .models import MODEL_DIR, Guess, IslrModel, SignBartModel
 from .personal import PersonalSigns
 
 log = logging.getLogger("signs")
@@ -57,6 +57,7 @@ def _swap(frames: list[dict]) -> list[dict]:
 class SignService:
     def __init__(self) -> None:
         self.model: Optional[SignBartModel] = None
+        self.islr: Optional[IslrModel] = None
         self.error = ""
         self.active: list[str] = []
         self.conversation: list[str] = []
@@ -67,6 +68,16 @@ class SignService:
             vocab = json.load(open(os.path.join(MODEL_DIR, "vocab.json")))
             self.active = list(vocab["active"])
             self.conversation = list(vocab.get("conversation", []))
+            # Primary engine: Google ISLR (Kaggle 1st place), trained on MediaPipe Holistic landmarks
+            # from Deaf signers' own phone/webcam videos. SIGN_ENGINE=signbart switches back.
+            if os.environ.get("SIGN_ENGINE", "islr") == "islr" and vocab.get("islr_conversation"):
+                try:
+                    self.islr = IslrModel()
+                    self.conversation = list(vocab["islr_conversation"])
+                    self.active = list(self.conversation)
+                    log.info("ISLR engine ready: %d signs", len(self.active))
+                except Exception as e:
+                    log.warning("ISLR not loaded, using SignBart: %s", e)
             log.info("sign model ready: %s, %d active signs", self.model.name, len(self.active))
         except Exception as e:  # the call still works by typing
             self.error = f"sign model not loaded: {e}"
@@ -77,7 +88,7 @@ class SignService:
         return self.model is not None
 
     def config(self) -> dict:
-        return {"ready": self.ready, "model": self.model.name if self.model else None, "vocab": self.active,
+        return {"ready": self.ready, "model": (self.islr or self.model).name if self.ready else None, "vocab": self.active,
                 "conversation": self.conversation, "personal": self.personal.labels(), "error": self.error}
 
     def classify(self, frames: list[dict], hand: str = "right", options: Optional[list[str]] = None) -> dict:
@@ -97,6 +108,11 @@ class SignService:
                 lg = self.model.logits(sw)
                 variants.append((self.model.from_logits(lg, k=5, allowed=allowed), lg, frames, "left"))
         best = max(variants, key=lambda v: v[0][0].p)
+        if self.islr:
+            # ISLR decides. SignBart's logits stay as the descriptor for the signer's own taught signs.
+            with self._lock:
+                ig = self.islr.predict(frames, k=5, allowed=allowed)
+            best = (ig,) + best[1:]
         personal = self.personal.score(best[2], best[3], best[1])
         guesses = best[0]
         boost = option_glosses(options or []) & (allowed or set())
