@@ -43,8 +43,8 @@ class Settings:
     # Twilio recommends ElevenLabs v4 for conversational quality and low latency.
     # v3/v4 settings contain stability + similarity (no speed).
     tts_provider: str = field(default_factory=lambda: os.getenv("TTS_PROVIDER", "ElevenLabs"))
-    tts_model: str = field(default_factory=lambda: os.getenv("TTS_MODEL", "v4"))
-    tts_voice_settings: str = field(default_factory=lambda: os.getenv("TTS_VOICE_SETTINGS", "0.45_0.80"))
+    tts_model: str = field(default_factory=lambda: os.getenv("TTS_MODEL", "flash_v2_5"))
+    tts_voice_settings: str = field(default_factory=lambda: os.getenv("TTS_VOICE_SETTINGS", ""))
     default_voice_id: str = field(default_factory=lambda: os.getenv("DEFAULT_VOICE_ID", "XrExE9yKIg1WjnnlVkGX"))
     language: str = field(default_factory=lambda: os.getenv("CALL_LANGUAGE", "en-US"))
 

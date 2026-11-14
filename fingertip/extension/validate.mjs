@@ -1,4 +1,4 @@
-import { readFile } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 
 const manifest = JSON.parse(await readFile(new URL('./manifest.json', import.meta.url), 'utf8'))
 const requiredMatches = ['https://meet.google.com/*', 'https://app.zoom.us/wc/*']
@@ -13,5 +13,12 @@ for (const match of requiredMatches) {
   if (!matches.includes(match)) throw new Error(`missing supported match: ${match}`)
 }
 if (manifest.icons) throw new Error('Do not reference icons that are absent from the package')
+
+const declaredFiles = [
+  manifest.options_page,
+  ...manifest.content_scripts.flatMap((entry) => entry.js || []),
+  ...manifest.web_accessible_resources.flatMap((entry) => entry.resources || []),
+]
+for (const file of declaredFiles) await access(new URL(`./${file}`, import.meta.url))
 
 console.log(`Manifest OK: ${manifest.name} ${manifest.version}; ${matches.length} supported URL patterns.`)

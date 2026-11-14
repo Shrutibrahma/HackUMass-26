@@ -33,7 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from twilio.request_validator import RequestValidator
 
-from . import relay, translate
+from . import grok_voice, relay, translate
 from .ai import make_brain
 from .show import VIDEO_TYPES, ShowStore, ask_video, make_video_engine, public_record, run_job, shared_record
 from .config import settings
@@ -79,6 +79,11 @@ class Hub:
                 return Contact(id=c.get("id", ""), name=c.get("name", number), number=number,
                                knows_sign=bool(c.get("knows_sign")), kind=c.get("kind", "person"),
                                style=c.get("style", ""), language=_language_or_english(c.get("language", "")))
+        # Server-side names for demo callers: KNOWN_CALLERS="+14135550123=Mom,+1617...=Dad"
+        for pair in os.getenv("KNOWN_CALLERS", "").split(","):
+            num, _, name = pair.partition("=")
+            if digits and name.strip() and re.sub(r"\D", "", num)[-10:] == digits:
+                return Contact(name=name.strip(), number=number, kind="person", knows_sign=False)
         return Contact(name=_pretty(number), number=number, kind="person", knows_sign=False)
 
 
@@ -108,6 +113,9 @@ def new_session(contact: Contact, direction: str, note: str = "") -> Controller:
 
 
 def twiml_for(c: Controller) -> str:
+    if grok_voice.grok_enabled():
+        # Grok realtime voice (VOICE_ENGINE=grok + XAI_API_KEY). Unverified on a live call.
+        return grok_voice.stream_twiml(c.id)
     return relay.relay_twiml(c.id, c.voice_id, c.lang.code if c.lang else None)
 
 
@@ -175,6 +183,12 @@ async def lifespan(app: FastAPI):
     state["signs"] = await asyncio.to_thread(SignService)
     if hasattr(state["brain"], "check"):
         asyncio.create_task(state["brain"].check())
+    def _grok_ctx(sid: str):
+        c = sessions.get(sid)
+        if not c or c.state == ENDED:
+            return None
+        return {"name": os.getenv("SIGNER_NAME", ""), "knows_sign": c.contact.knows_sign, "kind": c.contact.kind}
+    grok_voice.configure(_grok_ctx, hub.broadcast)
     yield
 
 
@@ -546,12 +560,18 @@ async def send(sid: str, body: SendIn, key: Optional[str] = None) -> dict:
         return {**sent_requests[rid], "request_id": rid, "duplicate": True}
     if mode == "captions_only":
         r = await c.caption_only(body.text, body.source)
-    elif mode == "ai_assist" and body.source == "typed":
+    elif body.mode == "ai_assist" and body.source == "typed":
+        # Only an explicit AI Assist request may rewrite. A typed send with no mode is spoken as typed.
         # First tap creates a visible/editable preview. A second, explicit approval sends source=draft+hash.
         draft = await c.draft_from_text(body.text, mode, body.tone)
         r = {"ok": True, "spoken": False, "requires_approval": True, "draft": asdict(draft)}
     else:
-        r = await c.send(body.text, body.source, body.signs, body.draft_id, body.force, body.hash, body.tone)
+        bridge = grok_voice.bridges.get(sid)
+        if bridge is not None:
+            # Grok engine: the approved text answers Grok's pending get_reply (numbers/times go word for word).
+            r = await bridge.deliver_reply(body.text, mode == "exact_words")
+        else:
+            r = await c.send(body.text, body.source, body.signs, body.draft_id, body.force, body.hash, body.tone)
     if rid:
         sent_requests[rid] = r
         while len(sent_requests) > 500:
@@ -988,6 +1008,11 @@ async def plain_errors(request: Request, exc: Exception) -> JSONResponse:
 
 
 # ---------------------------------------------------------------- static app
+
+from .rooms import router as rooms_router  # noqa: E402  browser video calls (must precede the SPA catch-all)
+
+app.include_router(rooms_router)
+app.include_router(grok_voice.router)
 
 _static = settings.static_dir or os.path.join(os.path.dirname(__file__), "..", "..", "app", "dist")
 if os.path.isdir(_static):

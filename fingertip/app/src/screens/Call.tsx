@@ -2,7 +2,7 @@ import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 
 import { NetworkError, newRequestId, post } from '../api'
 import { CallVideoCard, ShowFlow } from './Show'
 import { DEFAULT_QUICK, INTRO, mmss, VOICES } from '../data'
-import { Alert, ArrowUp, Grid, HangUp, Hand, Keyboard, Mic, Music, Phone, Video as VideoIcon } from '../icons'
+import { Alert, ArrowUp, Grid, HangUp, Hand, Phone, Keyboard, Mic, Music, Video as VideoIcon } from '../icons'
 import type { CallView, Draft, Line } from '../types'
 import { pretty, useSigning } from '../sign/useSigning'
 import { Avatar } from './Setup'
@@ -43,27 +43,46 @@ function SwipeToAnswer({ onAnswer }: { onAnswer: () => void }) {
 
 /* ---------------------------------------------------------------- incoming */
 
+function useClock() {
+  const [now, setNow] = useState(() => new Date())
+  useEffect(() => { const t = setInterval(() => setNow(new Date()), 15000); return () => clearInterval(t) }, [])
+  return now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/\s?[AP]M$/i, '')
+}
+
+function initials(name: string) {
+  const words = name.replace(/[^A-Za-z ]/g, ' ').trim().split(/\s+/).filter(Boolean)
+  return words.slice(0, 2).map((w) => w[0].toUpperCase()).join('')
+}
+
 export function Incoming({ call, onAnswer, onDecline }: { call: CallView; onAnswer: () => void; onDecline: () => void }) {
   useEffect(() => {
     try { navigator.vibrate?.([400, 200, 400, 200, 400]) } catch { /* not supported */ }
   }, [])
+  const [answering, setAnswering] = useState(false)
+  const clock = useClock()
   const c = call.contact
+  const ini = initials(c.name)
+  const answer = () => { if (!answering) { setAnswering(true); onAnswer() } }
   return (
-    <div className="screen dark incoming-call" role="dialog" aria-label={`Incoming call from ${c.name}`}>
-      <div className="phone-status" aria-hidden><span>Sign2Speak</span><span className="status-island" /></div>
+    <div className={`screen dark incoming-call ${answering ? 'answering' : ''}`} role="dialog" aria-label={`Incoming call from ${c.name}`}>
+      <div className="phone-status" aria-hidden><span>{clock}</span><span className="status-island" /><span className="status-icons">●●●●</span></div>
       <div className="incoming-copy">
-        <div className="kicker">Incoming Call</div>
-        <div className={`av incoming-avatar ${c.knows_sign || c.kind === 'business' ? '' : 'gray'}`}>
-          <span>{c.name.replace(/[^A-Za-z]/g, '')[0]?.toUpperCase() ?? '?'}</span>
-        </div>
+        <div className="kicker">{answering ? 'Connecting…' : 'Incoming Call'}</div>
         <h1>{c.name || 'Unknown caller'}</h1>
-        <div className="sub">mobile</div>
-        <div className="incoming-capability"><Hand size={18} /> Sign, type, or tap a reply</div>
+        <div className="sub">{c.number && c.name !== c.number ? 'mobile' : 'Phone call'}</div>
+        <div className="avatar-rings" aria-hidden={!ini}>
+          <div className="incoming-avatar">
+            {ini ? <span>{ini}</span> : <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor" aria-hidden><circle cx="12" cy="8" r="4.2" /><path d="M3.5 21c0-4.4 3.8-7.5 8.5-7.5s8.5 3.1 8.5 7.5z" /></svg>}
+          </div>
+        </div>
+        <div className="incoming-capability"><Hand size={18} /> Answer with signs, typing, or AI Assist</div>
       </div>
       <div className="incoming-actions">
-        <button className="decline-call" onClick={onDecline} aria-label="Decline call"><HangUp size={26} /></button>
-        <span>Decline</span>
-        <SwipeToAnswer onAnswer={onAnswer} />
+        <SwipeToAnswer onAnswer={answer} />
+        <div className="incoming-buttons">
+          <div><button className="decline-call" onClick={onDecline} aria-label="Decline call"><HangUp size={30} /></button><span>Decline</span></div>
+          <div><button className="accept-call" onClick={answer} aria-label="Accept call"><Phone size={30} /></button><span>Accept</span></div>
+        </div>
       </div>
     </div>
   )

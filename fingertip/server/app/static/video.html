@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Video call</title>
+<style>
+:root{--bg:#0b0c10;--panel:#16181f;--text:#f4f5f7;--muted:#9aa0ab;--accent:#4c8dff;--danger:#ff453a;--gutter:16px}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+body{display:flex;flex-direction:column;height:100dvh;overflow:hidden}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(env(safe-area-inset-top) + 10px) var(--gutter) 10px}
+#status{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px}
+#dot{width:10px;height:10px;border-radius:50%;background:var(--muted)}
+#dot.ok{background:#30d158}#dot.warn{background:#ffd60a}#dot.bad{background:var(--danger)}
+button{font:inherit;color:var(--text);border:0;cursor:pointer}
+.pill{background:var(--panel);border-radius:999px;padding:9px 16px;font-size:14px}
+#stage{position:relative;flex:1;min-height:0;margin:0 var(--gutter);border-radius:24px;overflow:hidden;background:#000}
+video{background:#000}
+#remote{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#tile-local{position:absolute;right:12px;top:12px;width:30%;max-width:180px;aspect-ratio:3/4;border-radius:16px;overflow:hidden;background:#111;box-shadow:0 4px 20px #0008;border:1px solid #fff3}
+.host #tile-local{width:46%;max-width:300px;aspect-ratio:4/3}
+#local{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.cap{position:absolute;left:0;right:0;bottom:0;padding:10px;display:flex;justify-content:center;pointer-events:none}
+.cap span{display:none;background:rgba(0,0,0,.82);color:#fff;border-radius:12px;padding:8px 12px;font-weight:700;line-height:1.25;text-align:center;font-size:clamp(20px,5.5vw,34px);max-width:100%;transition:opacity .6s;word-wrap:break-word}
+.cap.show span{display:inline-block}
+.cap.partial span{color:#c9ccd3;font-weight:500;font-style:italic}
+.cap.fade span{opacity:0}
+#tile-local .cap{padding:6px}
+#tile-local .cap span{font-size:clamp(13px,3.4vw,20px);padding:5px 8px}
+#msg{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:32px;color:var(--muted);font-size:17px;line-height:1.4;pointer-events:none}
+#msg.err{color:#ff8f87;pointer-events:auto}
+#hostbar{display:none;gap:8px;padding:10px var(--gutter) 0}
+.host #hostbar{display:flex}
+#hostbar input{flex:1;min-width:0;font:inherit;font-size:16px;color:var(--text);background:var(--panel);border:1px solid #fff2;border-radius:14px;padding:12px 14px}
+#hostbar button{background:var(--accent);border-radius:14px;padding:0 18px;font-weight:600}
+#controls{display:flex;justify-content:center;gap:18px;padding:14px var(--gutter) 6px}
+.round{width:58px;height:58px;border-radius:50%;background:var(--panel);font-size:13px;font-weight:600}
+.round.off{background:#fff;color:#000}
+.round.hang{background:var(--danger)}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:6px var(--gutter) calc(env(safe-area-inset-bottom) + 10px)}
+</style>
+</head>
+<body>
+<header>
+  <div id="status"><span id="dot"></span><span id="statusText">Starting...</span></div>
+  <button id="copy" class="pill" hidden>Copy invite link</button>
+</header>
+<div id="stage">
+  <video id="remote" autoplay playsinline></video>
+  <div id="cap-remote" class="cap" aria-live="polite"><span></span></div>
+  <div id="tile-local">
+    <video id="local" autoplay playsinline muted></video>
+    <div id="cap-local" class="cap" aria-live="polite"><span></span></div>
+  </div>
+  <div id="msg">Starting camera...</div>
+</div>
+<div id="hostbar">
+  <input id="capInput" type="text" placeholder="Type a caption" enterkeyhint="send" autocomplete="off">
+  <button id="capSend">Send</button>
+</div>
+<div id="controls">
+  <button id="mute" class="round" aria-label="Mute microphone">Mute</button>
+  <button id="cam" class="round" aria-label="Turn camera off">Cam</button>
+  <button id="hang" class="round hang" aria-label="Hang up">End</button>
+</div>
+<footer>Browser video call — not FaceTime</footer>
+<script>
+(function(){
+  var room = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+  var isHost = new URLSearchParams(location.search).get('host') === '1';
+  if (isHost) { document.body.classList.add('host'); document.getElementById('copy').hidden = false; }
+  var $ = function(id){ return document.getElementById(id); };
+  var remoteEl = $('remote'), localEl = $('local'), msg = $('msg');
+
+  function setStatus(t, cls){ $('statusText').textContent = t; $('dot').className = cls || ''; }
+  function showMsg(t, err){ msg.textContent = t || ''; msg.className = err ? 'err' : ''; msg.style.display = t ? 'flex' : 'none'; }
+
+  // Captions are shown over the host's video: remote video on the guest, local preview on the host.
+  var capEl = isHost ? $('cap-local') : $('cap-remote');
+  var fadeT = null, hideT = null;
+  function showCaption(text, final){
+    clearTimeout(fadeT); clearTimeout(hideT);
+    capEl.querySelector('span').textContent = text;
+    capEl.classList.toggle('show', !!text);
+    capEl.classList.toggle('partial', !final);
+    capEl.classList.remove('fade');
+    if (final && text) {
+      fadeT = setTimeout(function(){ capEl.classList.add('fade'); }, 6000);
+      hideT = setTimeout(function(){ capEl.classList.remove('show','fade'); }, 6700);
+    }
+  }
+
+  var ws = null, pc = null, stream = null, polite = false, ended = false;
+  var makingOffer = false, ignoreOffer = false, iceServers = [{urls:'stun:stun.l.google.com:19302'}];
+  var wsRetry = 0, hadPeer = false;
+
+  function send(o){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+
+  function newPC(){
+    if (pc) { try { pc.close(); } catch(e){} }
+    makingOffer = false; ignoreOffer = false;
+    pc = new RTCPeerConnection({iceServers: iceServers});
+    if (stream) stream.getTracks().forEach(function(t){ pc.addTrack(t, stream); });
+    pc.ontrack = function(e){ remoteEl.srcObject = e.streams[0]; showMsg(''); var p = remoteEl.play(); if (p && p.catch) p.catch(function(){}); };
+    pc.onicecandidate = function(e){ if (e.candidate) send({type:'ice', candidate:e.candidate}); };
+    pc.onnegotiationneeded = async function(){
+      try { makingOffer = true; await pc.setLocalDescription(); send({type:'offer', description: pc.localDescription}); }
+      catch(e){ console.error(e); } finally { makingOffer = false; }
+    };
+    pc.onconnectionstatechange = function(){
+      if (ended) return;
+      var s = pc.connectionState;
+      if (s === 'connected') { setStatus('Connected','ok'); showMsg(''); }
+      else if (s === 'connecting') setStatus('Connecting','warn');
+      else if (s === 'disconnected') setStatus('Reconnecting','warn');
+      else if (s === 'failed') { setStatus('Reconnecting','warn'); try { pc.restartIce(); } catch(e){} }
+    };
+  }
+
+  async function onSignal(m){
+    if (m.type === 'offer' || m.type === 'answer') {
+      var d = m.description;
+      var collision = d.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
+      ignoreOffer = !polite && collision;
+      if (ignoreOffer) return;
+      await pc.setRemoteDescription(d);
+      if (d.type === 'offer') { await pc.setLocalDescription(); send({type:'answer', description: pc.localDescription}); }
+    } else if (m.type === 'ice') {
+      try { await pc.addIceCandidate(m.candidate); } catch(e){ if (!ignoreOffer) console.error(e); }
+    }
+  }
+
+  function connectWS(){
+    if (ended) return;
+    var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(proto + '//' + location.host + '/ws/room/' + encodeURIComponent(room));
+    ws.onopen = function(){ wsRetry = 0; };
+    ws.onmessage = async function(ev){
+      var m; try { m = JSON.parse(ev.data); } catch(e){ return; }
+      switch (m.type) {
+        case 'joined':
+          polite = !!m.polite; newPC();
+          if (m.peers < 2) { setStatus('Waiting for the other person'); showMsg(hadPeer ? 'The other person left. Waiting for them to rejoin...' : (isHost ? 'Share the invite link, then wait here.' : 'Waiting for the other person...')); }
+          else { hadPeer = true; setStatus('Connecting','warn'); }
+          break;
+        case 'peer-joined': hadPeer = true; setStatus('Connecting','warn'); newPC(); break;
+        case 'peer-left': setStatus('Waiting for the other person'); remoteEl.srcObject = null; showMsg('The other person left. Waiting for them to rejoin...'); newPC(); break;
+        case 'full': ended = true; setStatus('Call ended','bad'); showMsg('This call already has two people.', true); break;
+        case 'caption': showCaption(m.text || '', m.final !== false); break;
+        case 'bye': setStatus('Call ended','bad'); remoteEl.srcObject = null; showMsg('The other person ended the call.'); break;
+        default: if (pc) { try { await onSignal(m); } catch(e){ console.error(e); } }
+      }
+    };
+    ws.onclose = function(){
+      if (ended) return;
+      setStatus('Reconnecting','warn');
+      var wait = Math.min(1000 * Math.pow(1.6, wsRetry++), 8000);
+      setTimeout(connectWS, wait);
+    };
+  }
+
+  async function start(){
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('Camera unavailable','bad');
+      showMsg('This browser cannot access the camera. Open this link in Safari or Chrome over HTTPS.', true); return;
+    }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}, audio:true});
+    } catch(e){
+      setStatus('Camera blocked','bad');
+      var denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      showMsg(denied ? 'Camera and microphone access was denied. Allow access in your browser settings (tap the lock or camera icon in the address bar), then reload this page.'
+                     : 'Could not start the camera or microphone (' + ((e && e.name) || 'error') + '). Check that no other app is using them, then reload.', true);
+      return;
+    }
+    localEl.srcObject = stream;
+    showMsg('Connecting...');
+    try { var r = await fetch('/api/rooms/ice'); if (r.ok) iceServers = await r.json(); } catch(e){}
+    connectWS();
+  }
+
+  $('mute').onclick = function(){
+    if (!stream) return; var t = stream.getAudioTracks()[0]; if (!t) return;
+    t.enabled = !t.enabled; this.classList.toggle('off', !t.enabled); this.textContent = t.enabled ? 'Mute' : 'Unmute';
+  };
+  $('cam').onclick = function(){
+    if (!stream) return; var t = stream.getVideoTracks()[0]; if (!t) return;
+    t.enabled = !t.enabled; this.classList.toggle('off', !t.enabled); this.textContent = t.enabled ? 'Cam' : 'Cam off';
+  };
+  $('hang').onclick = function(){
+    send({type:'bye'}); ended = true;
+    if (ws) try { ws.close(); } catch(e){}
+    if (pc) try { pc.close(); } catch(e){}
+    if (stream) stream.getTracks().forEach(function(t){ t.stop(); });
+    remoteEl.srcObject = null; localEl.srcObject = null;
+    setStatus('Call ended','bad'); showMsg('Call ended. You can close this tab.');
+  };
+  $('copy').onclick = function(){
+    var url = location.origin + '/v/' + encodeURIComponent(room), b = this;
+    function done(){ b.textContent = 'Copied'; setTimeout(function(){ b.textContent = 'Copy invite link'; }, 1800); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, function(){ window.prompt('Copy this link', url); });
+    else window.prompt('Copy this link', url);
+  };
+
+  var inp = $('capInput'), lastPartial = 0;
+  inp.addEventListener('input', function(){
+    var now = Date.now(); if (now - lastPartial < 120) return; lastPartial = now;
+    showCaption(inp.value, false); send({type:'caption', text: inp.value, final: false});
+  });
+  function sendFinal(){
+    var t = inp.value.trim(); if (!t) return;
+    showCaption(t, true); send({type:'caption', text: t, final: true}); inp.value = '';
+  }
+  inp.addEventListener('keydown', function(e){ if (e.key === 'Enter') { e.preventDefault(); sendFinal(); } });
+  $('capSend').onclick = sendFinal;
+
+  start();
+})();
+</script>
+</body>
+</html>

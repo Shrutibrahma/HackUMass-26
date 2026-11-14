@@ -577,7 +577,7 @@ class GeminiBrain:
                 f"Talking to: {context.get('contact_name')} "
                 f"({'family/friend, casual' if context.get('casual') else 'business, polite'})\n"
                 f"Recent conversation: {json.dumps(context.get('recent', [])[-6:])}",
-                Reply, temperature=0.2, timeout=1.2, job="typed_reply", model=self.reply_model)
+                Reply, temperature=0.2, timeout=2.0, job="typed_reply", model=self.reply_model)
             return r.sentence.strip()
         except Exception as e:
             log.warning("typed reply fallback: %s", e)
