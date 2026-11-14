@@ -34,11 +34,11 @@ describe('Segmenter', () => {
       [500, () => null],                         // hands down
       [400, moving(0.5, 0.9, 0, -0.4)],          // raise into signing space
       [500, wiggle(0.5, 0.5)],                   // sign 1 (YES)
-      [400, still(0.5, 0.5)],                    // pause
+      [650, still(0.5, 0.5)],                    // pause
       [500, moving(0.5, 0.5, 0.15, 0.05)],       // sign 2 (SUNDAY)
-      [400, still(0.65, 0.55)],                  // pause
+      [650, still(0.65, 0.55)],                  // pause
       [500, wiggle(0.6, 0.5)],                   // sign 3 (COME)
-      [400, still(0.6, 0.5)],
+      [650, still(0.6, 0.5)],
       [700, () => null],                         // hands drop
     ])
     expect(r.starts).toBe(1)

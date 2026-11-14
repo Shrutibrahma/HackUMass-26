@@ -24,10 +24,13 @@ export type SegParams = {
   longStillMs: number // hands up but still this long = phrase done
 }
 
+// Measured on a real laptop webcam (5-10 fps): a 220 ms pause cut signs into 3-4 frame pieces the model
+// can't read. A sign now needs a clear pause (~0.45 s) and at least MIN_FRAMES frames before it is cut.
 export const DEFAULTS: SegParams = {
-  vMove: 0.8, vStill: 0.35, stillMs: 220, minSignMs: 250, staticSignMs: 650, maxSignMs: 3000,
-  preMs: 330, restMs: 500, longStillMs: 1600,
+  vMove: 0.8, vStill: 0.35, stillMs: 450, minSignMs: 400, staticSignMs: 800, maxSignMs: 3000,
+  preMs: 500, restMs: 500, longStillMs: 1800,
 }
+const MIN_FRAMES = 8
 
 type Events = {
   onStart?: () => void
@@ -136,7 +139,7 @@ export class Segmenter {
         this.peak = Math.max(this.peak, this.speed)
         const dur = f.t - this.segStart
         const moved = this.peak >= this.p.vMove
-        const paused = stillFor >= this.p.stillMs && dur >= this.p.minSignMs && (moved || dur >= this.p.staticSignMs)
+        const paused = stillFor >= this.p.stillMs && dur >= this.p.minSignMs && this.seg.length >= MIN_FRAMES && (moved || dur >= this.p.staticSignMs)
         if (paused || dur >= this.p.maxSignMs) {
           this.emit()
           this.mode = 'hold'

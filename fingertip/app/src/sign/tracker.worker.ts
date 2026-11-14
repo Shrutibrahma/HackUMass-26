@@ -3,7 +3,7 @@
  * Landmark tracking off the main thread, so captions and buttons never wait on MediaPipe.
  * Receives ImageBitmaps, returns Frames (x, y only). See camera.ts for the two trackers.
  */
-import { FilesetResolver, HandLandmarker, HolisticLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision'
+import { FaceLandmarker, FilesetResolver, HandLandmarker, HolisticLandmarker, PoseLandmarker } from '@mediapipe/tasks-vision'
 
 type LM = { x: number; y: number }
 type P = [number, number]
@@ -14,11 +14,43 @@ const d2 = (a: LM, b: LM) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2
 const FACE_KEEP = [0,61,185,40,39,37,267,269,270,409,291,146,91,181,84,17,314,405,321,375,78,191,80,81,82,13,312,311,310,415,95,88,178,87,14,317,402,318,324,308,1,2,98,327,263,249,390,373,374,380,381,382,362,466,388,387,386,385,384,398,33,7,163,144,145,153,154,155,133,246,161,160,159,158,157,173]
 let detect: ((img: ImageBitmap, ts: number) => { pose: P[] | null; lh: P[] | null; rh: P[] | null; fx?: P[] | null }) | null = null
 
-async function init(tracker: 'holistic' | 'lite' | 'hands', base: string) {
+let delegateUsed = ''
+
+async function init(tracker: 'holistic' | 'lite' | 'hands' | 'fast', base: string) {
   const files = await FilesetResolver.forVisionTasks(`${base}/mediapipe/wasm`)
   const model = (f: string) => `${base}/models/${f}`
   const withFallback = async <T,>(make: (d: 'GPU' | 'CPU') => Promise<T>) => {
-    try { return await make('GPU') } catch { return make('CPU') }
+    try { const r = await make('GPU'); delegateUsed ||= 'GPU'; return r } catch { delegateUsed = 'CPU'; return make('CPU') }
+  }
+  if (tracker === 'fast') {
+    // Default. Three small single-purpose models on the GPU instead of Holistic, which ran at 3-6 fps
+    // on a real laptop (4 frames per sign: unreadable). Same Frame layout Holistic produces.
+    const [pose, hands, face] = await Promise.all([
+      withFallback((delegate) => PoseLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: model('pose_landmarker_lite.task'), delegate }, runningMode: 'VIDEO', numPoses: 1 })),
+      withFallback((delegate) => HandLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: model('hand_landmarker.task'), delegate }, runningMode: 'VIDEO', numHands: 2 })),
+      withFallback((delegate) => FaceLandmarker.createFromOptions(files, {
+        baseOptions: { modelAssetPath: model('face_landmarker.task'), delegate }, runningMode: 'VIDEO', numFaces: 1,
+        outputFaceBlendshapes: false, outputFacialTransformationMatrixes: false })),
+    ])
+    let n = 0
+    let lastFx: P[] | null = null
+    let lastPose: LM[] | undefined
+    detect = (img, ts) => {
+      // Hands carry the sign: every frame. Shoulders and face move slowly: every 2nd / 3rd frame.
+      const i = n++
+      if (i % 2 === 0 || !lastPose) lastPose = pose.detectForVideo(img, ts).landmarks[0]
+      const p = lastPose
+      const hs = hands.detectForVideo(img, ts + 0.1).landmarks
+      if (i % 3 === 1) {
+        const f = face.detectForVideo(img, ts + 0.2).faceLandmarks[0]
+        lastFx = f && f.length >= 468 ? FACE_KEEP.map((i) => [f[i].x, f[i].y] as P) : null
+      }
+      const { lh, rh } = assign(p, hs)
+      return { pose: pts(p), lh: pts(lh), rh: pts(rh), fx: lastFx }
+    }
+    return
   }
   if (tracker === 'hands') {
     // Playground only: hands alone, the fastest tracker. Left/right = side of the picture.
@@ -53,15 +85,21 @@ async function init(tracker: 'holistic' | 'lite' | 'hands', base: string) {
   detect = (img, ts) => {
     const p = pose.detectForVideo(img, ts).landmarks[0]
     const hs = hands.detectForVideo(img, ts + 0.5).landmarks
-    let lh: LM[] | undefined
-    let rh: LM[] | undefined
-    if (p && hs.length) {   // nearest pose wrist (15 = person's left, 16 = right), as Holistic does
-      const s = hs.map((h) => ({ h, toL: d2(h[0], p[15]), toR: d2(h[0], p[16]) }))
-      if (s.length === 1) { if (s[0].toL < s[0].toR) lh = s[0].h; else rh = s[0].h }
-      else if (s[0].toL + s[1].toR <= s[0].toR + s[1].toL) { lh = s[0].h; rh = s[1].h } else { lh = s[1].h; rh = s[0].h }
-    }
+    const { lh, rh } = assign(p, hs)
     return { pose: pts(p), lh: pts(lh), rh: pts(rh) }
   }
+}
+
+/** Each hand goes to the nearer pose wrist (15 = person's left, 16 = right), as Holistic does. */
+function assign(p: LM[] | undefined, hs: LM[][]): { lh?: LM[]; rh?: LM[] } {
+  let lh: LM[] | undefined
+  let rh: LM[] | undefined
+  if (p && hs.length) {
+    const s = hs.map((h) => ({ h, toL: d2(h[0], p[15]), toR: d2(h[0], p[16]) }))
+    if (s.length === 1) { if (s[0].toL < s[0].toR) lh = s[0].h; else rh = s[0].h }
+    else if (s[0].toL + s[1].toR <= s[0].toR + s[1].toL) { lh = s[0].h; rh = s[1].h } else { lh = s[1].h; rh = s[0].h }
+  }
+  return { lh, rh }
 }
 
 self.onmessage = async (e: MessageEvent) => {
@@ -69,7 +107,7 @@ self.onmessage = async (e: MessageEvent) => {
   if (m.type === 'init') {
     try {
       await init(m.tracker, m.base)
-      self.postMessage({ type: 'ready' })
+      self.postMessage({ type: 'ready', delegate: delegateUsed })
     } catch (err) {
       self.postMessage({ type: 'error', message: String(err) })
     }

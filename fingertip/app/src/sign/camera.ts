@@ -12,10 +12,12 @@
  */
 import type { Frame } from './segmenter'
 
-export const trackerName = (): 'lite' | 'holistic' =>
-  new URLSearchParams(location.search).get('tracker') === 'lite' ? 'lite' : 'holistic'
+export const trackerName = (): TrackerName => {
+  const t = new URLSearchParams(location.search).get('tracker')
+  return t === 'lite' || t === 'holistic' ? t : 'fast'
+}
 
-type TrackerName = 'lite' | 'holistic' | 'hands'
+type TrackerName = 'lite' | 'holistic' | 'hands' | 'fast'
 const workers: Partial<Record<TrackerName, Promise<Worker>>> = {}
 const listeners = new Set<(m: any) => void>()
 

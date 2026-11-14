@@ -25,6 +25,7 @@ function framing(f: Frame | null): string {
   if (!f || !f.pose) return 'Step into view so your face and shoulders show.'
   const ls = f.pose[11], rs = f.pose[12]
   if (f.pose[0][1] < 0.05) return 'Tilt the camera down a little.'
+  if ((ls[1] + rs[1]) / 2 > 0.62) return 'Sit up or raise the camera: your shoulders should be near the middle of the picture so your hands stay in view.'
   if (Math.abs(ls[0] - rs[0]) > 0.6) return 'Move back a little so your hands fit.'
   if (Math.abs(ls[0] - rs[0]) < 0.15) return 'Move a little closer.'
   return ''
@@ -37,6 +38,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
   const [heard, setHeard] = useState<Heard[]>([])
   const [signing, setSigning] = useState(false)
   const [hint, setHint] = useState('Starting the camera…')
+  const [slow, setSlow] = useState(0)
   const [teach, setTeach] = useState<string | null>(null)     // label being taught
   const [got, setGot] = useState(0)
   const [note, setNote] = useState('')
@@ -74,7 +76,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
       onPhraseEnd: () => setSigning(false),
     })
     const tick = setInterval(() => setHint(framing(last)), 700)
-    const stop = watch(video, (f) => { last = f; seg.push(f) })
+    const stop = watch(video, (f) => { last = f; seg.push(f) }, (fps) => setSlow(fps < 8 ? fps : 0))
     return () => { stop(); clearInterval(tick) }
   }, [video])
 
@@ -95,7 +97,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
 
         <div className="ss-stage">
           <SelfView signing={signing || !!teach} camera onVideo={setVideo} label="" className="ss-cam" />
-          {hint && <div className="ss-hint">{hint}</div>}
+          {(hint || slow > 0) && <div className="ss-hint">{hint || `Tracking is slow on this computer (${slow.toFixed(0)} frames a second). Close other tabs or plug in for better results.`}</div>}
           {teach ? (
             <div className="ss-teach" aria-live="polite">
               <div className="ss-teach-word">{pretty(teach)}</div>
