@@ -102,11 +102,14 @@ export default function App() {
       setRoute({ name: 'home' })
     } catch (e: any) {
       setDialError(e.message)
-      if (route.name !== 'note') setRoute({ name: 'contact', id: c.id })
+      // Saved contact: show the error on its card. Typed number: stay on the keypad and say why.
+      if (route.name !== 'note' && c.id && contacts.some((k) => k.id === c.id)) setRoute({ name: 'contact', id: c.id })
+      else if (route.name !== 'note') say(`Couldn't call: ${e.message}`, true)
     } finally {
       setDialing(false)
     }
-  }, [route.name])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.name, contacts])
 
   const updateContact = (c: Contact) => setContacts((cs) => cs.map((x) => (x.id === c.id ? c : x)))
 
