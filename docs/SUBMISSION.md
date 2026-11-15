@@ -106,3 +106,5 @@ The judge has agreed to be called. The backup video is ready but **never present
 5. **Gesture Synth (15 s).** Hand the judge the camera. Pinch, and music starts.
 
 Close: "The other person installed nothing. The signer approved every word."
+
+

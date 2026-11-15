@@ -275,6 +275,49 @@ class RulesBrain:
     async def write_reply(self, signs: list[str], caller_text: str, context: dict, tone: Tone) -> str:
         return rules_sentence(signs, casual=context.get("casual", False), tone=tone)
 
+    async def write_typed_reply(self, hint: str, caller_text: str, context: dict, tone: Tone) -> str:
+        """Fast deterministic expansion for the demo and for provider outages.
+
+        These patterns deliberately use only facts present in ``hint``. The generic
+        fallback cleans punctuation but never invents a commitment or detail.
+        """
+        raw = " ".join((hint or "").strip().split())
+        low = raw.lower()
+        contact = str(context.get("contact_name") or "").strip()
+        casual_name = f", {contact}," if contact and contact.lower() in {"mom", "dad", "mum"} else ""
+        number_words = {
+            "0": "zero", "1": "one", "2": "two", "3": "three", "4": "four", "5": "five",
+            "6": "six", "7": "seven", "8": "eight", "9": "nine", "10": "ten", "20": "twenty",
+        }
+
+        if re.search(r"\b(refund|return)\b", low) and re.search(r"\b(order|item|package)\b", low) \
+                and re.search(r"\b(broken|damaged|cracked)\b", low):
+            return "I'm calling because my order arrived damaged, and I'd like to request a refund."
+        late = re.search(r"\b(late|delay(?:ed)?)\b", low)
+        minutes = re.search(r"\b(\d{1,3})\b", low)
+        if late and "traffic" in low and minutes:
+            n = minutes.group(1)
+            spoken_n = number_words.get(n, n)
+            prefix = f"{contact}, " if contact.lower() in {"mom", "dad", "mum"} else ""
+            return (f"{prefix}I'm running a little late because of traffic. "
+                    f"I should be there in about {spoken_n} minutes.")
+        when = re.search(r"\b(today|tomorrow|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b", low)
+        clock = re.search(r"\b(\d{1,2})(?::(\d{2}))?\b", low)
+        if re.search(r"\b(yes|yeah|yep|sure)\b", low) and when and clock:
+            hour = number_words.get(clock.group(1), clock.group(1))
+            return f"Yes, {when.group(1)} at {hour} works for me."
+        if re.search(r"\b(yes|yeah|yep|sure)\b", low) and "home" in low and clock:
+            hour = number_words.get(clock.group(1), clock.group(1))
+            return f"Yes{casual_name} I'll be home around {hour}.".replace(",,", ",")
+        if low in {"yes", "yeah", "yep"}:
+            return "Yeah!" if context.get("casual") else "Yes."
+        if low in {"no", "nope"}:
+            return "No, sorry." if context.get("casual") else "No, thank you."
+        if not raw:
+            return ""
+        sentence = raw[:1].upper() + raw[1:]
+        return sentence if sentence.endswith((".", "?", "!")) else sentence + "."
+
     async def translate(self, text: str, target: str, source: str = "") -> Optional[str]:
         """Rules can't translate. None means: not available (calls stay English)."""
         return None
@@ -522,6 +565,24 @@ class GeminiBrain:
             log.warning("reply writer fallback: %s", e)
             return rules_sentence(signs, casual=context.get("casual", False), tone=tone)
 
+    async def write_typed_reply(self, hint: str, caller_text: str, context: dict, tone: Tone) -> str:
+        """Expand shorthand into one editable sentence; never speak from this method."""
+        try:
+            r = await self._json(
+                "Turn the user's shorthand into one concise, natural sentence they may approve for a phone call.\n"
+                "Preserve every fact and the intended yes/no meaning. Do not add names, numbers, dates, prices, "
+                "commitments, reasons, or personal details. If meaning is ambiguous, minimally tidy the exact words.\n"
+                f"User shorthand: {hint!r}\n"
+                f"Caller just said: {caller_text!r}\n"
+                f"Talking to: {context.get('contact_name')} "
+                f"({'family/friend, casual' if context.get('casual') else 'business, polite'})\n"
+                f"Recent conversation: {json.dumps(context.get('recent', [])[-6:])}",
+                Reply, temperature=0.2, timeout=2.0, job="typed_reply", model=self.reply_model)
+            return r.sentence.strip()
+        except Exception as e:
+            log.warning("typed reply fallback: %s", e)
+            return await self.fallback.write_typed_reply(hint, caller_text, context, tone)
+
     async def translate(self, text: str, target: str, source: str = "") -> Optional[str]:
         """One line, for a call in another language. The caller checks the result with
         translate.translation_guard before anything is spoken. None on failure."""
@@ -554,3 +615,5 @@ def make_brain():
         return GeminiBrain()
     log.warning("Gemini not configured: using RulesBrain")
     return RulesBrain()
+
+

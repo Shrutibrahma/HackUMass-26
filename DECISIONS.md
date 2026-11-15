@@ -239,3 +239,5 @@ parallel (actions, on-screen text, speech, sounds); pass 3 is a precision pass a
 (kept only inside its window). Added "ask the video" (answered only from the clip, or refused) and
 a printable problem report whose key frames are grabbed in the browser, so no new server
 dependencies. One failed section or fact keeps its coarse result; only a failed overview fails.
+
+

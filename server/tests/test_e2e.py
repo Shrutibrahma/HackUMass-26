@@ -6,13 +6,14 @@ relay receives the text -> app reloads mid-call and reattaches -> hang up.
 """
 import json
 import os
+import tempfile
 import time
 
 os.environ["VALIDATE_TWILIO_SIGNATURE"] = "false"
 os.environ["PUBLIC_URL"] = "https://s2s.test"
-os.environ.pop("TWILIO_ACCOUNT_SID", None)
-os.environ.pop("GEMINI_API_KEY", None)
-os.environ["LOG_DIR"] = "/tmp/claude-0/s2s-logs"
+os.environ["TWILIO_ACCOUNT_SID"] = ""       # keep local tokens.env out of deterministic tests
+os.environ["GEMINI_API_KEY"] = ""
+os.environ["LOG_DIR"] = os.path.join(tempfile.gettempdir(), "talkbridge-test-logs")
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -261,3 +262,62 @@ def test_relay_ended_reconnects_only_on_failure():
         sid2 = c.post("/api/calls", json={"number": "4135550161"}).json()["sid"]
         r = c.post(f"/twilio/relay-ended/{sid2}", data={"SessionStatus": "completed", "CallStatus": "completed"})
         assert "ConversationRelay" not in r.text and sessions[sid2].state == "ENDED"
+
+
+def test_modes_ai_preview_exact_and_captions_only():
+    """Mode changes are server-enforced and do not reconnect the phone relay."""
+    with TestClient(app) as c:
+        from app import main
+        main.recent_dials.clear()
+        sid = c.post("/api/calls", json={"number": "4135550170", "name": "Mom", "knows_sign": True}).json()["sid"]
+        with c.websocket_connect(f"/ws/relay/{sid}") as relay_ws:
+            relay_ws.send_text(json.dumps({"type": "setup", "callSid": sessions[sid].call_sid}))
+
+            mode = c.post(f"/api/calls/{sid}/mode", json={"mode": "ai_assist"}).json()
+            assert mode == {"ok": True, "mode": "ai_assist"}
+            preview = c.post(f"/api/calls/{sid}/compose", json={"text": "yes home 6", "mode": "ai_assist"}).json()
+            assert preview["spoken"] is False and preview["requires_approval"] is True
+            assert preview["draft"]["text"] == "Yes, Mom, I'll be home around six."
+
+            # Approving the sealed draft sends exactly the displayed text.
+            d = preview["draft"]
+            sent = c.post(f"/api/calls/{sid}/send", json={"text": d["text"], "source": "draft",
+                          "draft_id": d["id"], "hash": d["hash"], "mode": "ai_assist"}).json()
+            assert sent["ok"]
+            assert json.loads(relay_ws.receive_text())["token"] == d["text"]
+
+            exact = "Coming home now."
+            sent = c.post(f"/api/calls/{sid}/send", json={"text": exact, "source": "typed",
+                          "mode": "exact_words"}).json()
+            assert sent["ok"]
+            assert json.loads(relay_ws.receive_text())["token"] == exact
+
+            # Caption reaches app state only; there is no relay WebSocket text to consume.
+            cap = c.post(f"/api/calls/{sid}/send", json={"text": "I am signing now.", "source": "typed",
+                         "mode": "captions_only"}).json()
+            assert cap == {"ok": True, "spoken": False, "caption": "I am signing now."}
+            assert sessions[sid].lines[-1].kind == "caption"
+
+
+def test_incoming_webhook_retry_is_idempotent():
+    with TestClient(app) as c:
+        before = len(sessions)
+        first = c.post("/twilio/voice", data={"CallSid": "CAretry1", "From": "+14135550101"})
+        second = c.post("/twilio/voice", data={"CallSid": "CAretry1", "From": "+14135550101"})
+        assert first.status_code == second.status_code == 200
+        assert len(sessions) == before + 1
+
+
+def test_voice_string_v4_accepts_only_two_settings():
+    from app import config
+    s = config.settings
+    old = (s.tts_model, s.tts_voice_settings)
+    try:
+        s.tts_model, s.tts_voice_settings = "v4", "0.45_0.80"
+        assert s.voice_string("VID") == "VID-v4-0.45_0.80"
+        s.tts_voice_settings = "1.0_0.45_0.80"  # speed is invalid for v4
+        assert s.voice_string("VID") == "VID-v4"
+    finally:
+        s.tts_model, s.tts_voice_settings = old
+
+

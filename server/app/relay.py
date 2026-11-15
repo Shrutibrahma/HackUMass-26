@@ -106,3 +106,5 @@ def text_message(text: str, *, interruptible: bool = True, preemptible: bool = T
 
 def end_message(reason: str = "hangup") -> str:
     return json.dumps({"type": "end", "handoffData": json.dumps({"reason": reason})})
+
+

@@ -1,0 +1,225 @@
+/* ==========================================================================
+   iOS / macOS design layer (dark appearance). Original styling in Apple's visual language:
+   system font stack, iOS system colours, materials (blur), grouped lists, large titles.
+   Every new screen uses these tokens and `ios-` primitives. Loaded after index.css.
+   ========================================================================== */
+@import '@fontsource-variable/inter';
+
+:root {
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --font-round: ui-rounded, -apple-system, 'SF Pro Rounded', 'Inter Variable', system-ui, sans-serif;
+
+  /* iOS system colours, dark appearance */
+  --sys-blue: #0a84ff;
+  --sys-green: #30d158;
+  --sys-red: #ff453a;
+  --sys-orange: #ff9f0a;
+  --sys-yellow: #ffd60a;
+  --sys-indigo: #5e5ce6;
+  --sys-teal: #64d2ff;
+  --sys-gray: #8e8e93;
+  --sys-gray2: #636366;
+  --sys-gray3: #48484a;
+  --sys-gray4: #3a3a3c;
+  --sys-gray5: #2c2c2e;
+  --sys-gray6: #1c1c1e;
+
+  --label: #ffffff;
+  --label-2: rgba(235, 235, 245, .6);
+  --label-3: rgba(235, 235, 245, .3);
+  --fill: rgba(120, 120, 128, .36);
+  --fill-2: rgba(120, 120, 128, .24);
+  --fill-3: rgba(118, 118, 128, .18);
+  --separator: rgba(84, 84, 88, .6);
+  --bg-0: #000000;
+  --bg-1: #1c1c1e;          /* grouped cell */
+  --bg-2: #2c2c2e;
+  --material: rgba(30, 30, 32, .72);     /* "regular material" */
+  --material-thick: rgba(28, 28, 30, .88);
+  --radius-cell: 12px;
+  --ease: cubic-bezier(.32, .72, 0, 1);   /* iOS sheet spring-ish */
+}
+
+/* The phone shell: a portrait iPhone-proportioned device centred on desktop, full-bleed on phones. */
+.ios {
+  font-family: var(--font); color: var(--label); background: var(--bg-0);
+  -webkit-font-smoothing: antialiased; letter-spacing: -0.01em;
+  font-feature-settings: 'cv11', 'ss01';   /* Inter: SF-like single-storey a off, straight-sided digits */
+}
+.ios h1, .ios h2, .ios h3 { font-family: var(--font); letter-spacing: -0.02em; }
+.ios button:focus-visible, .ios input:focus-visible, .ios textarea:focus-visible { outline: 2px solid var(--sys-blue); outline-offset: 2px; }
+
+body:has(.ios) { background: radial-gradient(1200px 700px at 50% -10%, #1d2233 0%, #07080b 60%) fixed, #07080b; }
+.ios.screen { background: var(--bg-0); max-width: 430px; }
+@media (min-width: 640px) and (min-height: 760px) {
+  .ios.screen { height: min(900px, calc(100dvh - 40px)); margin-top: 20px; border-radius: 52px;
+    box-shadow: 0 0 0 10px #16171b, 0 0 0 11px #2a2c33, 0 40px 120px rgba(0, 0, 0, .7); }
+}
+
+/* status bar + dynamic island */
+.ios-status { position: relative; flex: none; height: 50px; padding: 16px 30px 0; display: flex; justify-content: space-between;
+  font: 600 15px/1 var(--font); color: var(--label); z-index: 5; }
+.ios-status .island { position: absolute; left: 50%; top: 11px; transform: translateX(-50%); width: 120px; height: 34px; border-radius: 20px; background: #000; }
+.ios-status .icons { display: flex; gap: 5px; align-items: center; }
+.ios-status .bars { display: flex; gap: 2px; align-items: flex-end; height: 11px; }
+.ios-status .bars i { width: 3px; background: currentColor; border-radius: 1px; }
+.ios-status .battery { width: 24px; height: 11.5px; border: 1.3px solid rgba(255,255,255,.5); border-radius: 3.5px; padding: 1.3px; position: relative; }
+.ios-status .battery::after { content: ''; position: absolute; right: -3.5px; top: 3.3px; width: 1.6px; height: 4px; border-radius: 0 1px 1px 0; background: rgba(255,255,255,.5); }
+.ios-status .battery i { display: block; height: 100%; width: 78%; background: currentColor; border-radius: 1.6px; }
+@media (max-width: 639px) { .ios-status { display: none; } }
+
+/* navigation */
+.ios-nav { flex: none; display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 12px; }
+.ios-nav button { color: var(--sys-blue); font-size: 17px; display: flex; align-items: center; gap: 2px; min-height: 44px; padding: 0 4px; }
+.ios-large-title { font: 700 34px/1.12 var(--font); letter-spacing: -0.03em; padding: 2px 16px 8px; }
+.ios-subtitle { font-size: 13px; color: var(--label-2); padding: 0 16px 10px; }
+
+/* segmented control */
+.ios-seg { display: flex; background: var(--fill-3); border-radius: 9px; padding: 2px; position: relative; }
+.ios-seg button { flex: 1; min-height: 30px; border-radius: 7px; font: 500 13px var(--font); color: var(--label); transition: background .25s var(--ease); white-space: nowrap; }
+.ios-seg button.on { background: #636366; font-weight: 600; box-shadow: 0 3px 8px rgba(0,0,0,.12), 0 3px 1px rgba(0,0,0,.04); }
+
+/* search */
+.ios-search { display: flex; align-items: center; gap: 6px; margin: 4px 16px 10px; padding: 0 8px; height: 36px; border-radius: 10px; background: var(--fill-3); color: var(--label-2); }
+.ios-search input { flex: 1; background: none; border: 0; outline: 0; font-size: 17px; color: var(--label); }
+.ios-search input::placeholder { color: var(--label-2); }
+
+/* grouped list */
+.ios-section-h { font-size: 13px; text-transform: uppercase; color: var(--label-2); padding: 18px 32px 7px; letter-spacing: 0; }
+.ios-section-f { font-size: 13px; color: var(--label-2); padding: 7px 32px 0; }
+.ios-group { margin: 0 16px; background: var(--bg-1); border-radius: var(--radius-cell); overflow: hidden; }
+.ios-row { width: 100%; display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 16px; text-align: left; position: relative; color: var(--label); font-size: 17px; }
+.ios-row + .ios-row::before { content: ''; position: absolute; top: 0; right: 0; left: var(--inset, 16px); height: .5px; background: var(--separator); }
+.ios-row:active { background: var(--bg-2); }
+.ios-row .grow { flex: 1; min-width: 0; }
+.ios-row .sub { display: block; font-size: 13px; color: var(--label-2); margin-top: 1px; }
+.ios-row .detail { color: var(--label-2); font-size: 15px; }
+.ios-row .chev { color: var(--sys-gray3); }
+.ios-row.danger { color: var(--sys-red); }
+.ios-row.link { color: var(--sys-blue); }
+.ios-icon-tile { width: 29px; height: 29px; border-radius: 7px; display: grid; place-items: center; color: #fff; flex: none; }
+
+/* plain (non-grouped) list like Recents */
+.ios-plain .ios-row { padding-left: 16px; }
+.ios-plain .ios-row + .ios-row::before { left: 64px; }
+
+/* switch */
+.ios-switch { position: relative; width: 51px; height: 31px; flex: none; }
+.ios-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.ios-switch span { position: absolute; inset: 0; border-radius: 16px; background: var(--fill); transition: background .25s var(--ease); pointer-events: none; }
+.ios-switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 3px 8px rgba(0,0,0,.15), 0 3px 1px rgba(0,0,0,.06); transition: transform .25s var(--ease); }
+.ios-switch input:checked + span { background: var(--sys-green); }
+.ios-switch input:checked + span::after { transform: translateX(20px); }
+
+/* avatars (iOS Contacts monogram) */
+.ios-avatar { flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600;
+  background: linear-gradient(180deg, #a5abb8 0%, #858994 100%); text-transform: uppercase; letter-spacing: 0; }
+.ios-avatar.sm { width: 40px; height: 40px; font-size: 16px; }
+.ios-avatar.md { width: 64px; height: 64px; font-size: 26px; }
+.ios-avatar.lg { width: 104px; height: 104px; font-size: 42px; }
+.ios-avatar.xl { width: 132px; height: 132px; font-size: 54px; }
+
+/* buttons */
+.ios-btn { min-height: 50px; border-radius: 14px; font: 600 17px var(--font); padding: 0 18px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.ios-btn.filled { background: var(--sys-blue); color: #fff; }
+.ios-btn.gray { background: var(--fill-2); color: var(--sys-blue); }
+.ios-btn.tinted { background: rgba(10,132,255,.18); color: var(--sys-blue); }
+.ios-btn:disabled { opacity: .4; }
+.ios-btn:active { opacity: .7; }
+.ios-link { color: var(--sys-blue); font-size: 17px; }
+
+/* circular call buttons (Phone app) */
+.ios-callbtn { display: flex; flex-direction: column; align-items: center; gap: 7px; font-size: 13px; color: var(--label); }
+.ios-callbtn > button, .ios-callbtn > span.disc { width: 74px; height: 74px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+  background: rgba(255,255,255,.16); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%); transition: background .15s, transform .15s; }
+.ios-callbtn > button:active { transform: scale(.94); }
+.ios-callbtn > button.on { background: #fff; color: #000; }
+.ios-callbtn > button.red { background: var(--sys-red); }
+.ios-callbtn > button.green { background: var(--sys-green); }
+.ios-callbtn > button:disabled { opacity: .35; }
+
+/* materials */
+.ios-material { background: var(--material); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); }
+.ios-material-thick { background: var(--material-thick); backdrop-filter: blur(50px) saturate(180%); -webkit-backdrop-filter: blur(50px) saturate(180%); }
+
+/* tab bar */
+.ios-tabbar { flex: none; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  border-top: .5px solid var(--separator); }
+.ios-tabbar button { display: flex; flex-direction: column; align-items: center; gap: 2px; font: 500 10px var(--font); color: var(--sys-gray); min-height: 49px; justify-content: center; }
+.ios-tabbar button.on { color: var(--sys-blue); }
+
+/* sheets & banners */
+.ios-scrim { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; animation: ios-fade .25s var(--ease); }
+.ios-sheet { width: 100%; border-radius: 14px 14px 0 0; padding: 8px 16px calc(18px + env(safe-area-inset-bottom)); background: var(--bg-1); animation: ios-up .38s var(--ease); }
+.ios-sheet .grabber { width: 36px; height: 5px; border-radius: 3px; background: var(--sys-gray3); margin: 0 auto 12px; }
+.ios-banner { margin: 8px 12px 0; padding: 12px 14px; border-radius: 16px; display: flex; gap: 10px; align-items: flex-start; font-size: 15px; }
+.ios-banner.warn { background: rgba(255,159,10,.16); color: #ffd18a; }
+.ios-banner.bad { background: rgba(255,69,58,.16); color: #ffb3ad; }
+.ios-banner.info { background: rgba(10,132,255,.16); color: #a8d1ff; }
+.ios-toast { position: absolute; left: 50%; top: 58px; transform: translateX(-50%); z-index: 60; padding: 10px 16px; border-radius: 22px; font: 600 14px var(--font);
+  display: flex; gap: 8px; align-items: center; white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis; animation: ios-drop .35s var(--ease); }
+
+@keyframes ios-fade { from { opacity: 0; } }
+@keyframes ios-up { from { transform: translateY(100%); } }
+@keyframes ios-drop { from { transform: translate(-50%, -16px); opacity: 0; } }
+@keyframes ios-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .ios *, .ios *::before, .ios *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* ======================= Phone app ======================= */
+.phone { display: flex; flex-direction: column; }
+.phone .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+.phone-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.phone .check { color: var(--sys-blue); }
+.quick-actions { padding: 4px 16px 0; }
+.quick-actions button { width: 100%; display: flex; gap: 12px; align-items: center; text-align: left; padding: 12px 14px; border-radius: 14px; background: var(--bg-1); }
+.quick-actions b { display: block; font-weight: 600; font-size: 16px; }
+.quick-actions small { color: var(--label-2); font-size: 13px; }
+.qa-ico { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; color: #fff; flex: none; }
+.ios-row .fav-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; text-align: left; color: inherit; min-height: 44px; }
+.ios-row .name { font-weight: 600; font-size: 17px; }
+.ios-row .name.missed { color: var(--sys-red); }
+.ios-row .sub svg { vertical-align: -1px; }
+.ios-row .info { color: var(--sys-blue); width: 36px; height: 36px; display: grid; place-items: center; flex: none; }
+.ios-plain { background: transparent; }
+.ios-plain .ios-row:active { background: var(--bg-1); }
+.empty-state { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 70px 30px; color: var(--label-2); text-align: center; font-size: 15px; }
+.empty-state svg { color: var(--sys-gray3); margin-bottom: 6px; }
+.empty-state b { color: var(--label); font-size: 20px; font-weight: 600; }
+.letter-h { position: sticky; top: 0; z-index: 1; padding: 4px 16px; font: 600 15px var(--font); color: var(--label-2); background: rgba(0,0,0,.9); }
+.ios-field { width: 100%; display: block; height: 44px; padding: 0 16px; background: none; border: 0; outline: 0; color: var(--label); font-size: 17px; border-bottom: .5px solid var(--separator); }
+.inline-field { width: 100%; background: none; border: 0; outline: 0; color: var(--label); font-size: 17px; padding: 2px 0; }
+.inline-field::placeholder, .ios-field::placeholder { color: var(--label-3); }
+.sheet-nav { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.sheet-nav b { font-weight: 600; }
+.sheet-nav button { color: var(--sys-blue); font-size: 17px; }
+.sheet-nav button:disabled { color: var(--label-3); }
+.ios-select { background: var(--fill-3); color: var(--label); border: 0; border-radius: 8px; padding: 6px 8px; font: 15px var(--font); }
+.row-del { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--fill-2); color: var(--label-2); }
+.cap-preview { margin-top: 12px; padding: 10px 14px; border-radius: 18px; background: var(--bg-2); display: inline-block; line-height: 1.3; }
+.voice-play { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: rgba(10,132,255,.2); color: var(--sys-blue); flex: none; }
+.sheet-foot { padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); }
+
+/* contact card */
+.card-head { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 6px 16px 4px; text-align: center; }
+.card-head h1 { font: 600 30px var(--font); margin-top: 8px; letter-spacing: -0.02em; }
+.card-head .sub { font-size: 14px; color: var(--label-2); }
+.card-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; width: 100%; margin-top: 14px; }
+.card-actions button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0 8px; border-radius: 12px; background: var(--bg-1); color: var(--sys-blue); font-size: 12px; }
+.card-actions button:disabled { color: var(--label-3); }
+
+/* keypad (iOS dial pad) */
+.dialpad { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; padding: 0 0 22px; }
+.dial-number { font: 400 36px var(--font); letter-spacing: .02em; min-height: 46px; text-align: center; padding: 0 20px; }
+.dial-match { min-height: 22px; color: var(--sys-blue); font-size: 15px; margin-bottom: 14px; }
+.keygrid { display: grid; grid-template-columns: repeat(3, 78px); gap: 16px 26px; }
+.keygrid button { width: 78px; height: 78px; border-radius: 50%; background: var(--sys-gray5); display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--label); transition: background .1s; }
+.keygrid button:active { background: var(--sys-gray3); }
+.keygrid .d { font: 400 34px/1 var(--font); }
+.keygrid .l { font: 600 10px var(--font); letter-spacing: .18em; margin-top: 2px; color: var(--label); }
+.keygrid.small { grid-template-columns: repeat(3, 70px); gap: 12px 22px; }
+.keygrid.small button { width: 70px; height: 70px; background: rgba(255,255,255,.14); }
+.dial-actions { display: grid; grid-template-columns: repeat(3, 78px); gap: 0 26px; margin-top: 16px; align-items: center; justify-items: center; }
+.dial-call { width: 78px; height: 78px; border-radius: 50%; background: var(--sys-green); color: #fff; display: grid; place-items: center; }
+.dial-call:disabled { opacity: .45; }
+.dial-del { color: var(--sys-gray); width: 60px; height: 60px; display: grid; place-items: center; }
+@media (max-height: 700px) { .keygrid { gap: 10px 22px; } .keygrid button, .dial-call { width: 68px; height: 68px; } }

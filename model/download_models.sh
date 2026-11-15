@@ -11,3 +11,5 @@ curl -fL -o signbart/config.json https://huggingface.co/tinh2312/SignBart-ASL-27
 curl -fL -o islr/model.tflite https://huggingface.co/sign/kaggle-asl-signs-1st-place/resolve/main/model.tflite
 curl -fL -o islr/sign_to_prediction_index_map.json https://huggingface.co/sign/kaggle-asl-signs-1st-place/resolve/main/sign_to_prediction_index_map.json
 # Rebuild the ONNX file (needs torch + safetensors + onnx + onnxruntime):  python signbart_model.py
+
+

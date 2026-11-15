@@ -81,3 +81,5 @@ the rest."
 Phone on a stand, front camera. Both hands, the face and the upper body must stay in frame for
 every demo sign, including signs near the face and signs that move outward. Mark the stand
 position on the table.
+
+

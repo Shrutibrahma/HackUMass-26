@@ -51,3 +51,5 @@ new reply replaces a queued one.
 ## Privacy
 Raw video never leaves the device. No recordings. Transcripts stay in memory and are saved
 only on the signer's own phone if they tap "Save transcript".
+
+

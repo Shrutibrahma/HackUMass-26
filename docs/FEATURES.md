@@ -124,3 +124,5 @@ verified, so if it fails, switch those passes to the Files API (`GeminiVideo.pre
 3. **Look for overclaiming** in `README.md`, `docs/SUBMISSION.md` and the UI text: nothing unverified may be described as working.
 4. **Re-check the privacy promises:** raw sign video stays on the device; Show it clips go to Google and are deleted after 24 h; transcripts are saved only on tap.
 5. **Once keys exist:** update every Blocked/Unverified row from real results (`eval/live_calls.md`, `eval/sign_eval.py`, Show it on 3–4 real clips) before submission.
+
+

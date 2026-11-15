@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "baseUrl": "C:/Users/shrut/Downloads/talkbridge-extracted/talkbridge-main/fingertip/app",
+    "paths": {
+      "react": ["node_modules/@types/react/index.d.ts"],
+      "react/jsx-runtime": ["node_modules/@types/react/jsx-runtime.d.ts"],
+      "react/jsx-dev-runtime": ["node_modules/@types/react/jsx-dev-runtime.d.ts"],
+      "react-dom/*": ["node_modules/@types/react-dom/*"],
+      "*": ["node_modules/*"]
+    },
+    "typeRoots": ["C:/Users/shrut/Downloads/talkbridge-extracted/talkbridge-main/fingertip/app/node_modules/@types"],
+    "noEmit": true
+  }
+}

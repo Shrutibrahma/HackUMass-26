@@ -61,3 +61,5 @@ Without Twilio keys the server uses `FakeTelephony` and logs "Twilio not configu
 FakeTelephony (no real calls)". `/api/health` reports `"twilio": false`. Nothing in the app
 presents a fake call as real: no phone rings, no carrier events arrive, and the Calling screen
 stays at "Starting the call...".
+
+

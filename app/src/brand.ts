@@ -4,4 +4,6 @@
  * app/index.html, app/public/manifest.webmanifest, server/app/config.py) when it is decided.
  */
 export const APP_NAME = 'Fingertip'
-export const TAGLINE = 'Every conversation, at your fingertips.'
+export const TAGLINE = 'Your hands. Your voice. Your world.'
+
+

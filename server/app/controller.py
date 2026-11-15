@@ -125,6 +125,8 @@ class Controller:
         self.started_at: Optional[float] = None
         self.ended_reason = ""
         self.recap: list[str] = []
+        self.mode = "ai_assist"
+        self.demo = False             # SIMULATED demo call (no Twilio); every event is tagged demo:true
 
         self._relay_send: Optional[Callable[[str], Awaitable[None]]] = None
         self._queue: list[tuple] = []      # (text, level, kind, bypass_dup, draft, tone, spoken)
@@ -145,6 +147,8 @@ class Controller:
 
     async def emit(self, msg: dict) -> None:
         msg.setdefault("sid", self.id)
+        if self.demo:
+            msg["demo"] = True
         if self.emit_fn:
             try:
                 await self.emit_fn(msg)
@@ -200,6 +204,8 @@ class Controller:
             "analysis": self.analysis.model_dump() if self.analysis else None,
             "recap": self.recap,
             "ended_reason": self.ended_reason,
+            "mode": self.mode,
+            "demo": self.demo,
         }
 
     async def _line(self, line: Line, new: bool = True) -> None:
@@ -385,6 +391,9 @@ class Controller:
         if self._speak_task:
             self._speak_task.cancel()
             self._speak_task = None
+        # A reply the signer approved may be waiting behind another line (a filler, the greeting).
+        # Interrupting must not lose it: it comes back as the draft below.
+        queued_reply = next((q for q in self._queue if q[2] == "reply"), None)
         self._queue.clear()
         if self._speaking:
             sp = self._speaking
@@ -405,6 +414,16 @@ class Controller:
                 self.dup._recent.pop(guards.normalize_line(self.draft.text), None)
                 self.dup._recent.pop(guards.normalize_line(sp.text), None)
                 await self.emit({"type": "draft", "draft": asdict(self.draft)})
+        if queued_reply and not (self._speaking_draft or (self._speaking and self._speaking.kind == "reply")):
+            text_q, _lvl, _kind, _byp, draft_q, tone_q, _spoken = queued_reply
+            self.draft = Draft(id=_nid("d"), text=text_q, source="rest", level=QUICK)
+            if draft_q:
+                self.draft.tone = draft_q.tone
+            else:
+                self.draft.tone = tone_q
+            self._seal(self.draft)
+            self.dup._recent.pop(guards.normalize_line(text_q), None)
+            await self.emit({"type": "draft", "draft": asdict(self.draft)})
         self._speaking = None
         self._speaking_draft = None
         self._cancel_fillers()
@@ -432,12 +451,45 @@ class Controller:
         await self.emit({"type": "draft", "draft": asdict(d)})
         return d
 
+    async def set_mode(self, mode: str) -> None:
+        self.mode = mode
+        await self.emit({"type": "mode", "mode": mode})
+
+    async def draft_from_text(self, text: str, mode: str = "ai_assist", tone: str = "") -> Draft:
+        """Create an editable, sealed preview. This method never sends audio."""
+        hint = (text or "").strip()
+        tone = tone or self.default_tone
+        if mode == "ai_assist":
+            sentence = await self.brain.write_typed_reply(hint, self._last_caller_text, self.context(), tone)
+            source, evidence = "ai", hint.split()
+        else:
+            sentence, source, evidence = hint, "typed", []
+        d = self._check_draft(sentence, evidence, source=source, tone=tone)
+        self.draft = d
+        if self.state not in (SPEAKING, CONFIRMING, ENDED):
+            await self._set_state(DRAFT_READY)
+        await self.emit({"type": "draft", "draft": asdict(d), "mode": mode})
+        return d
+
+    async def caption_only(self, text: str, source: str = "typed") -> dict:
+        """Publish the signer's words to captions without sending anything to TTS."""
+        if self.state == ENDED:
+            return {"ok": False, "reason": "The call has ended.", "spoken": False}
+        exact = (text or "").strip()
+        if not exact:
+            return {"ok": False, "reason": "Nothing to caption.", "spoken": False}
+        line = Line(id=_nid("m"), who="me", text=exact, status="caption", level=QUICK, kind="caption")
+        await self._line(line)
+        await self.emit({"type": "local_caption", "text": exact, "source": source})
+        return {"ok": True, "spoken": False, "caption": exact}
+
     def _check_draft(self, sentence: str, signs: list[str], *, source: str, tone: str = "neutral") -> Draft:
         d = Draft(id=_nid("d"), text=sentence, source=source, signs=list(signs), tone=tone)
         caller = self._last_caller_text
         chips = " ".join(self.analysis.chips) if self.analysis else ""
-        if source == "signs":
-            fg = guards.fact_guard(sentence, [guards.gloss_text(signs), caller, self.note, chips, self._video_text])
+        if source in {"signs", "ai"}:
+            fg = guards.fact_guard(sentence, [guards.gloss_text(signs), caller, self.contact.name,
+                                               self.note, chips, self._video_text])
             ng = guards.negation_guard(sentence, signs)
             hg = guards.hedge_guard(sentence, signs)
             d.problems = fg.problems + ng.problems + hg.problems
@@ -484,6 +536,10 @@ class Controller:
         if not force and not self.dup.check(d.text):
             return {"ok": False, "reason": "You just said that."}
         self.draft = d
+        if d.level == CONFIRM and d.confirm_summary == "This says yes to a commitment":
+            # The signer already read and approved this exact sentence in the preview. A plain "yes" to a
+            # plan doesn't need a second tap; money, orders and bookings still always get the confirm sheet.
+            d.level = QUICK
         if d.level == CONFIRM:
             await self._open_confirm()
             return {"ok": True, "confirm": True}
@@ -712,3 +768,5 @@ class Controller:
             self.recap = []
         await self.emit({"type": "ended", "reason": reason, "recap": self.recap,
                          "lines": [asdict(l) for l in self.lines if l.kind != "filler"]})
+
+

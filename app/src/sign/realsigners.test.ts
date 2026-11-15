@@ -10,7 +10,8 @@ import type { Frame } from './segmenter'
 
 const PHRASES = process.env.PHRASES ?? '/tmp/claude-0/phrases.json'
 const SERVER = process.env.SERVER ?? 'http://localhost:8000'
-const STEP = Number(process.env.STEP ?? '1')   // 2 = 15 fps, 3 = 10 fps: a slower phone
+const STEP = Number(process.env.STEP ?? '1')
+const GAP = Number(process.env.GAP ?? '0')     // ms of hands-down between signs (one sign per raise)   // 2 = 15 fps, 3 = 10 fps: a slower phone
 type Clip = { gloss: string; fps: number; frames: Omit<Frame, 't'>[] }
 
 describe.skipIf(!existsSync(PHRASES))('real signers through the pipeline', () => {
@@ -37,8 +38,11 @@ describe.skipIf(!existsSync(PHRASES))('real signers through the pipeline', () =>
         onPhraseEnd: (s) => { got.push(...s) },
       })
       let t = 0
-      for (const c of ph) c.frames.forEach((f, i) => { t += 1000 / c.fps; if (i % STEP === 0) pipe.push({ ...f, t }) })
-      for (let k = 0; k < 30; k++) { t += 33.3; pipe.push({ pose: null, lh: null, rh: null, t }) }   // hands down at the end
+      for (const c of ph) {
+        c.frames.forEach((f, i) => { t += 1000 / c.fps; if (i % STEP === 0) pipe.push({ ...f, t }) })
+        for (let g = 0; g < GAP; g += 33.3 * STEP) { t += 33.3 * STEP; pipe.push({ pose: c.frames[c.frames.length - 1].pose, lh: null, rh: null, t }) }
+      }
+      for (let k = 0; k < 60; k++) { t += 33.3; pipe.push({ pose: null, lh: null, rh: null, t }) }   // hands down at the end
       await pipe.drain()
       const want = ph.map((c) => c.gloss)
       const ok = got.join(' ') === want.join(' ')
@@ -60,3 +64,5 @@ describe.skipIf(!existsSync(PHRASES))('real signers through the pipeline', () =>
     expect(clipsOk / clips).toBeGreaterThan(0.6)
   }, 120000)
 })
+
+

@@ -146,3 +146,5 @@ export class HandVoice {
 
 /** Height (0 top .. 1 bottom) -> filter cutoff in Hz: higher hand = brighter. */
 export const cutoffFor = (y: number) => 300 * Math.pow(2, (1 - Math.min(1, Math.max(0, y))) * 4.2)
+
+

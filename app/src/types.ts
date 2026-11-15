@@ -126,3 +126,5 @@ export type SavedTranscript = {
   recap: string[]
   lines: { who: string; text: string }[]
 }
+
+

@@ -16,7 +16,7 @@ So nothing that needs them can be "Working and verified". Updated 2026-11-14.
 | Incoming calls | Implemented but unverified | Rings only while the app is open (no push notifications) |
 | Call progress (Dialing, Ringing, They picked up, Connected) from real carrier events | Implemented but unverified | Shows Twilio's status callbacks only; the fake line correctly stays at "Starting the call..." |
 | Guards: no invented facts, "no" kept, hedges kept, money/bookings confirmed, no duplicates | Working and verified (offline) | `eval/bench.py`: 40/40 scripted calls, 36/36 guard units |
-| Barge-in: caller talks over the voice, unsaid rest kept | Implemented but unverified | Bench cases pass; needs a real call |
+| Barge-in: caller talks over the voice, unsaid rest kept (also a reply still queued behind a filler, fixed 2026-11-14) | Implemented but unverified | Bench cases pass; needs a real call |
 | Quick replies, customizable (Yes, No, Please repeat that, Give me a moment, …) | Working and verified (in browser) | Settings → Quick replies; always one tap away in a call |
 | Typing as a first-class input | Working and verified (in browser, fake line) | |
 | Caption size (Small → Extra large; 22 px+ at Medium) | Working and verified (in browser) | Extra large measured at 31.9 px |
@@ -53,6 +53,7 @@ So nothing that needs them can be "Working and verified". Updated 2026-11-14.
 |---|---|---|
 | Meet extension: panel, sentence posted to Meet chat (everyone sees it), voice into the Meet mic | Implemented but unverified on real Meet | Tested on a stand-in page; Meet's chat selectors are best effort |
 | Desktop bridge → VB-CABLE / BlackHole for Zoom, Teams, any app | Implemented but unverified | Protocol tested with `--dry-run`; audio never played |
+| Local caption box on the Meet page (only you see it; movable, A−/A+, minimize, hide; says whether chat/mic delivery worked) | Working and verified (headless Chrome, stand-in Meet page) | `extension/content.js` `Captions`. Not yet tried on real Meet |
 | Captions composited into a virtual camera for every participant | Not started | Today, shared text goes through Meet chat. Next step: a caption page captured by OBS Virtual Camera |
 | Incoming meeting captions | Cut for now | Use the meeting's own captions |
 | Speaker labels, lip reading, sound alerts | Cut | |
@@ -74,3 +75,5 @@ So nothing that needs them can be "Working and verified". Updated 2026-11-14.
 | Vultr deploy | Blocked | No server or domain yet |
 | Typed frontend/backend contract | Done | `app/src/contract.ts`, `docs/CONTRACT.md`; every event carries `eid` + `ts` |
 | Product name | Done: **Fingertip** | Set in one place per surface (`app/src/brand.ts`). Web search found no communication app by that name; no trademark search done |
+
+

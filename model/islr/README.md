@@ -12,3 +12,5 @@ Files are from
 - the [ASL vocabulary](https://www.kaggle.com/competitions/asl-signs/data?select=sign_to_prediction_index_map.json) of the training data
 
 
+
+

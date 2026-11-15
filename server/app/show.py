@@ -540,3 +540,5 @@ def public_record(r: dict) -> dict:
 def shared_record(r: dict) -> dict:
     """What the other person sees through a share link: the clip, facts and timeline, nothing about the call."""
     return {k: r.get(k) for k in ("id", "facts", "sections", "summary_say", "duration", "created", "title")}
+
+
