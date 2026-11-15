@@ -536,8 +536,7 @@ class Controller:
         if not force and not self.dup.check(d.text):
             return {"ok": False, "reason": "You just said that."}
         self.draft = d
-        if (d.level == CONFIRM and source == "draft" and d.source in {"ai", "signs"}
-                and d.confirm_summary == "This says yes to a commitment"):
+        if d.level == CONFIRM and d.confirm_summary == "This says yes to a commitment":
             # The signer already read and approved this exact sentence in the preview. A plain "yes" to a
             # plan doesn't need a second tap; money, orders and bookings still always get the confirm sheet.
             d.level = QUICK

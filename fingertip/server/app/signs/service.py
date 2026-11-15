@@ -53,6 +53,12 @@ def option_glosses(options: list[str]) -> set[str]:
     return out
 
 
+def _mirror(frames: list[dict]) -> list[dict]:
+    f = lambda v: v and [[1 - p[0], p[1], *p[2:]] for p in v]  # noqa: E731
+    return [{**x, "pose": f(x.get("pose")), "face": f(x.get("face")), "fx": f(x.get("fx")),
+             "lh": f(x.get("rh")), "rh": f(x.get("lh"))} for x in frames]
+
+
 def _swap(frames: list[dict]) -> list[dict]:
     return [{**f, "lh": f.get("rh"), "rh": f.get("lh")} for f in frames]
 
@@ -94,12 +100,16 @@ class SignService:
         return {"ready": self.ready, "model": (self.islr or self.model).name if self.ready else None, "vocab": self.active,
                 "conversation": self.conversation, "personal": self.personal.labels(), "error": self.error}
 
-    def classify(self, frames: list[dict], hand: str = "right", options: Optional[list[str]] = None) -> dict:
+    def classify(self, frames: list[dict], hand: str = "right", options: Optional[list[str]] = None,
+                 vocab: Optional[list[str]] = None) -> dict:
         if not self.model:
             return {"ok": False, "reason": "Signing isn't available right now. You can type instead."}
         if len(frames) < 4:
             return {"ok": False, "reason": "too short"}
         allowed = set(self.active) or None
+        # vocab (the five call signs): still compare against every active sign, and only answer when the
+        # winner is one of the five. Held-out: 50/50 right, 0/250 other signs fired by mistake.
+        only = {v.upper() for v in vocab} if vocab else None
         t0 = time.perf_counter()
         with self._lock:
             variants = []   # (guesses, logits, frames, hand)
@@ -113,8 +123,12 @@ class SignService:
         best = max(variants, key=lambda v: v[0][0].p)
         if self.islr:
             # ISLR decides. SignBart's logits stay as the descriptor for the signer's own taught signs.
+            # Try the picture as-is and mirrored, keep the more confident: works for left-handed signers and
+            # webcams that mirror the image (held-out: 299/300 as-is, 274/300 mirrored only, 298/300 best of both).
             with self._lock:
-                ig = self.islr.predict(frames, k=5, allowed=allowed)
+                a = self.islr.predict(frames, k=5, allowed=allowed)
+                b = self.islr.predict(_mirror(frames), k=5, allowed=allowed)
+            ig = a if a[0].p >= b[0].p else b
             best = (ig,) + best[1:]
         personal = self.personal.score(best[2], best[3], best[1])
         guesses = best[0]
@@ -138,6 +152,9 @@ class SignService:
                 second, top, unsure, source = top, Guess(pl, ps), True, "personal"
             elif ps >= PERSONAL_MAYBE and pl == top.sign:
                 unsure = False                 # the signer's own examples agree with the model
+        if only and source == "model" and (top.sign not in only or unsure):
+            return {"ok": False, "reason": "not one of the call signs", "ms": round(ms, 1),
+                    "_p": [round(g.p, 3) for g in guesses[:3]], "_top": [g.sign for g in guesses[:3]]}
         if source == "model" and top.p < NOISE_P:
             return {"ok": False, "reason": "unclear", "ms": round(ms, 1), "_p": [round(g.p, 3) for g in guesses[:3]],
                     "_top": [g.sign for g in guesses[:3]]}

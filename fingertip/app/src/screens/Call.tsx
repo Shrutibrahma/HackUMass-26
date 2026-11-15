@@ -14,6 +14,15 @@ const REPEAT = 'Could you say that again?'
 
 type CommunicationMode = 'ai_assist' | 'sign_language' | 'exact_words' | 'captions_only'
 
+/** Signing in a call: five signs, each says a whole sentence right away. Held-out accuracy within these five: see eval. */
+export const CALL_SIGNS: Record<string, string> = {
+  HELLO: "Hi, it's me.",
+  YES: 'Yes.',
+  NO: 'No.',
+  'THANK-YOU': 'Thank you!',
+  PLEASE: 'Could you say that again, please?',
+}
+
 const COMMUNICATION_MODES: { id: CommunicationMode; label: string; short: string; hint: string }[] = [
   { id: 'ai_assist', label: 'AI Assist', short: 'AI Assist', hint: 'A few words become a natural sentence. You approve it first.' },
   { id: 'sign_language', label: 'Sign Language', short: 'Sign', hint: 'Your camera reads supported signs on this device.' },
@@ -162,11 +171,11 @@ type Props = {
 
 export function InCall({ call, online, dispatch, signing: signingProp = null, unsure: unsureProp = null, onPickUnsure, onSignAgain, preview = false, startTyping,
   quick = DEFAULT_QUICK, capScale = 1, demo = false }: Props) {
-  const [communicationMode, setCommunicationMode] = useState<CommunicationMode>(() => {
-    try { return (localStorage.getItem('sign2speak-mode') as CommunicationMode) || 'ai_assist' } catch { return 'ai_assist' }
-  })
-  const [muted, setMuted] = useState(false)
-  const [speaker, setSpeaker] = useState(true)
+  // Two simple switches instead of four modes: AI writing on/off for typing, and the camera for signing.
+  const [aiOn, setAiOn] = useState<boolean>(() => { try { return localStorage.getItem('sign2speak-ai') !== 'off' } catch { return true } })
+  const [signOn, setSignOn] = useState(false)
+  const typeMode: CommunicationMode = aiOn ? 'ai_assist' : 'exact_words'
+  const communicationMode: CommunicationMode = signOn ? 'sign_language' : typeMode
   const [keypadOpen, setKeypadOpen] = useState(false)
   const [preparedDraft, setPreparedDraft] = useState<Draft | null>(null)
   const [dialed, setDialed] = useState('')
@@ -179,7 +188,14 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
     lastPosted.current = key
     post(`/api/calls/${call.sid}/signs`, { signs: s }).catch(() => {})
   }
-  const live = useSigning({ sid: call.sid, enabled: !preview && call.state !== 'ENDED' && communicationMode === 'sign_language', onSigns: draftFrom, onPhrase: draftFrom })
+  const sayRef = useRef<(t: string) => void>(() => {})
+  const onSign = (s: string[]) => {
+    const g = s[s.length - 1]
+    if (g && CALL_SIGNS[g]) { sayRef.current(CALL_SIGNS[g]); live.again() }
+  }
+  const live = useSigning({ sid: call.sid, vocab: Object.keys(CALL_SIGNS), enabled: !preview && call.state !== 'ENDED' && signOn,
+                            onSigns: onSign })
+  void draftFrom
   const signing = signingProp ?? live.signs
   const unsure = unsureProp ?? (live.unsure ? { options: live.unsure.map(pretty) } : null)
   const pickUnsure = (o: string) => (onPickUnsure ? onPickUnsure(o) : live.pick(o.toUpperCase().replace(/ /g, '-')))
@@ -206,7 +222,7 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
   const [showing, setShowing] = useState(false)       // Show it: film something instead of describing it
 
   useEffect(() => {
-    try { localStorage.setItem('sign2speak-mode', communicationMode) } catch { /* private mode */ }
+    try { localStorage.setItem('sign2speak-ai', aiOn ? 'on' : 'off') } catch { /* private mode */ }
     if (!preview) post(`/api/calls/${call.sid}/mode`, { mode: communicationMode }).catch(() => {})
     if (communicationMode !== 'sign_language') {
       live.again()
@@ -214,7 +230,7 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
     }
   // live.again is intentionally excluded: the hook object changes as recognition updates.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [communicationMode, call.sid, preview])
+  }, [communicationMode, aiOn, call.sid, preview])
 
   // A person came back from hold: flash and buzz.
   useEffect(() => {
@@ -248,13 +264,14 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
       // One request id per tap: if the network drops mid-request we retry once, and the server
       // answers the retry from memory instead of speaking the line twice.
       const sealed = approvedDraft ?? call.draft
-      const editedAiCopy = communicationMode === 'ai_assist' && !!preparedDraft && t !== preparedDraft.text
+      const editedAiCopy = typeMode === 'ai_assist' && !!preparedDraft && t !== preparedDraft.text
+      const sentMode: CommunicationMode = source === 'chip' ? 'exact_words' : typeMode
       const body = {
         text: t, source: editedAiCopy ? 'typed' : source, draft_id: draftId,
         hash: source === 'draft' && !editedAiCopy ? sealed?.hash : undefined,
         signs: source === 'draft' ? sealed?.signs ?? [] : [], request_id: newRequestId(),
-        mode: editedAiCopy ? 'exact_words' : communicationMode,
-        requested_mode: editedAiCopy ? communicationMode : undefined,
+        mode: editedAiCopy ? 'exact_words' : sentMode,
+        requested_mode: editedAiCopy ? typeMode : undefined,
         approved: source === 'draft' || editedAiCopy,
       }
       const r: any = await api('send', body).catch((e) => (e instanceof NetworkError ? api('send', body) : Promise.reject(e)))
@@ -267,18 +284,20 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
     }
   }
 
+  sayRef.current = (t: string) => { send(t, 'chip') }
+
   async function submitTyped() {
     if (!text.trim() || busy) return
-    if (communicationMode !== 'ai_assist' || mode === 'edit') {
+    if (typeMode !== 'ai_assist' || mode === 'edit') {
       return send(text, preparedDraft && text === preparedDraft.text ? 'draft' : 'typed', preparedDraft?.id, preparedDraft ?? undefined)
     }
     setBusy(true)
     setErr('')
     try {
-      const response: any = await api('compose', { text, mode: communicationMode })
+      const response: any = await api('compose', { text, mode: typeMode })
       const composed: Draft | undefined = typeof response?.draft === 'object' ? response.draft : undefined
       const sentence = composed?.text || (typeof response?.draft === 'string' ? response.draft : '')
-      if (!sentence) throw new Error("AI Assist couldn't prepare a reply. You can switch to Exact Words.")
+      if (!sentence) throw new Error("AI couldn't write that. Turn AI off to send your words as they are.")
       setPreparedDraft(composed ?? {
         id: `local-${newRequestId()}`, text: sentence, source: 'ai_assist', signs: [], level: 'auto',
         confirm_summary: '', problems: [], blocked: false, tone: '', hash: '',
@@ -296,7 +315,6 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
     try { await api(p, body) } catch (e: any) { setErr(e.message) }
   }
 
-  const switchMode = (m: CommunicationMode) => { setCommunicationMode(m); setPreparedDraft(null); setText(''); setMode('idle'); setErr('') }
   const lastCallerId = useMemo(() => [...call.lines].reverse().find((l) => l.who === 'caller')?.id, [call.lines])
   const draft = call.draft
   const st = call.state
@@ -307,9 +325,8 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
     const c = call.analysis?.chips ?? []
     return draft?.source === 'rest' ? ['Say the rest', ...c.slice(0, 2)] : c
   }, [call.analysis, draft])
-  const cameraActive = communicationMode === 'sign_language'
+  const cameraActive = signOn
   const cameraCaption = signing?.length ? signing.map(pretty).join(' ') : call.draft?.source === 'signs' ? call.draft.text : ''
-  const modeInfo = COMMUNICATION_MODES.find((m) => m.id === communicationMode) ?? COMMUNICATION_MODES[0]
   const status = preview ? (demo ? 'Rehearsal' : 'Preview') : reconnecting ? 'Reconnecting…' : st === 'CONNECTED' || st === 'RINGING' ? 'Connecting…' : timer
 
   function tapChip(c: string) {
@@ -350,14 +367,14 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
     items.push(<div key="live" className="ic-msg them live">{call.caption.text}<span className="ic-typing"><i /><i /><i /></span></div>)
   }
   if (reconnecting) items.push(<div key="rc" className="ic-note">Anything {name} says now appears when we reconnect</div>)
-  if (signing) {
+  if (signing && !signOn) {
     items.push(
       <div key="signing" className="ic-card signing" aria-live="polite">
         <div className="ic-card-k"><SFHand size={14} /> Reading your signs</div>
         <div className="ic-tags">{signing.map((s2, i) => <span key={i}>{pretty(s2)}</span>)}<span className="dots"><i /><i /><i /></span></div>
       </div>)
   }
-  if (unsure) {
+  if (unsure && !signOn) {
     items.push(
       <div key="unsure" className="ic-card">
         <div className="ic-card-k">Which sign did you mean?</div>
@@ -390,26 +407,28 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
       {list.map((c, i) => <button key={c + i} className={i === 0 && (unclear || c === 'Say the rest') ? 'first' : ''} onClick={() => tapChip(c)} disabled={busy}>{c}</button>)}
     </div>
   )
-  const composerPlaceholder = communicationMode === 'ai_assist' ? 'A few words, e.g. “yes home 6”'
-    : communicationMode === 'captions_only' ? 'Caption (not spoken)' : communicationMode === 'sign_language' ? 'Or type instead' : 'Exactly what to say'
+  const composerPlaceholder = aiOn ? 'Type a few words…' : 'Type exactly what to say…'
   const composer = (
     <form className="ic-composer" onSubmit={(e) => { e.preventDefault(); submitTyped() }}>
+      <button type="button" className={`ic-ai ${aiOn ? 'on' : ''}`} onClick={() => { setAiOn(!aiOn); setPreparedDraft(null) }}
+              aria-pressed={aiOn} aria-label={aiOn ? 'AI writing on' : 'AI writing off'}>
+        <SFSparkles size={15} /><span>{aiOn ? 'AI' : 'AI off'}</span></button>
       <input value={text} onChange={(e) => setText(e.target.value)} autoFocus={!preview && mode === 'type'}
              onFocus={() => mode === 'idle' && setMode('type')}
              placeholder={composerPlaceholder} aria-label="Type a reply" enterKeyHint="send" />
       <button className="ic-send" type="submit" disabled={busy || !text.trim()}
-              aria-label={communicationMode === 'ai_assist' ? 'Write it with AI' : communicationMode === 'captions_only' ? 'Show caption' : 'Send'}>
-        {busy ? <span className="spin" /> : communicationMode === 'ai_assist' ? <SFSparkles size={18} /> : <SFArrowUp size={18} />}
+              aria-label={aiOn ? 'Write it with AI' : 'Send'}>
+        {busy ? <span className="spin" /> : <SFArrowUp size={18} />}
       </button>
     </form>
   )
   let dock: React.ReactNode
   if (reconnecting) {
     dock = <div className="ic-status"><SFWifiSlash size={18} /><span>Getting back in… The call is still going.</span></div>
-  } else if (unsure && mode === 'idle') {
+  } else if (unsure && mode === 'idle' && !signOn) {
     dock = <div className="ic-row"><button className="ios-btn gray grow" onClick={signAgain}>Sign again</button>
       <button className="ic-round" onClick={() => setMode('type')} aria-label="Type instead"><SFKeyboard size={20} /></button></div>
-  } else if (signing && mode === 'idle') {
+  } else if (signing && mode === 'idle' && !signOn) {
     dock = <div className="ic-status"><SFHand size={18} /><span>Keep signing. Lower your hands when you're done.</span>
       <button className="ic-round" onClick={() => setMode('type')} aria-label="Type instead"><SFKeyboard size={20} /></button></div>
   } else if (mode === 'edit') {
@@ -419,14 +438,11 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
       <div className="ic-row">
         <button className="ios-btn gray" onClick={() => { setMode('idle'); setText(''); setPreparedDraft(null) }}>Cancel</button>
         <button className="ios-btn filled grow" disabled={busy || !text.trim()} onClick={submitTyped}>
-          {communicationMode === 'captions_only' ? 'Show caption' : `Say it to ${name}`}</button>
+          Say it to {name}</button>
       </div>
     </>
   } else if (st === 'ON_HOLD') {
     dock = <>{composer}</>
-  } else if (st === 'SPEAKING') {
-    dock = <div className="ic-status"><Wave on /><span>Speaking for you…</span>
-      <button className="ic-pill-btn" onClick={() => act('stop')}><SFStop size={13} /> Stop</button></div>
   } else if (draft && draft.source === 'rest') {
     dock = <>{chipRow(chipList, 'Quick replies')}<div className="ic-row">
       <button className="ios-btn gray grow" onClick={() => act('draft/clear')}>Drop the rest</button>
@@ -439,13 +455,25 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
   } else {
     const waiting = st === 'CONNECTED' || st === 'RINGING'
     dock = <>
-      {myTurn ? chipRow(chipList.length ? chipList : mine, chipList.length ? 'Suggested replies' : 'Your quick replies') : !waiting && chipRow(mine, 'Your quick replies')}
-      <div className="ic-listen">
-        <Wave on={st === 'CALLER_TALKING'} />
-        <span>{waiting ? 'Connecting the call…' : myTurn ? (unclear ? 'Didn’t catch that. Ask them to repeat?' : 'Your turn') : `Listening to ${name}…`}</span>
-        {!waiting && !preview && <button className="ic-pill-btn" onClick={() => setShowing(true)} aria-label="Show it: film something instead of describing it"><SFVideo size={14} /> Show it</button>}
+      {st !== 'SPEAKING' && (myTurn ? chipRow(chipList.length ? chipList : mine, chipList.length ? 'Suggested replies' : 'Your quick replies') : !waiting && chipRow(mine, 'Your quick replies'))}
+      {st === 'SPEAKING' ? (
+        <div className="ic-listen"><Wave on /><span>Speaking for you…</span>
+          <button className="ic-pill-btn" onClick={() => act('stop')}><SFStop size={13} /> Stop</button></div>
+      ) : signOn ? (
+        <div className="ic-signlist" aria-label="Signs you can use">
+          {Object.entries(CALL_SIGNS).map(([g, t]) => <span key={g}><b>{pretty(g)}</b> → “{t}”</span>)}
+        </div>
+      ) : (
+        <div className="ic-listen">
+          <Wave on={st === 'CALLER_TALKING'} />
+          <span>{waiting ? 'Connecting the call…' : myTurn ? (unclear ? 'Didn’t catch that. Ask them to repeat?' : 'Your turn to reply') : `Listening to ${name}…`}</span>
+        </div>
+      )}
+      <div className="ic-inputrow">
+        <button className={`ic-round ic-signbtn ${signOn ? 'on' : ''}`} onClick={() => setSignOn(!signOn)} aria-pressed={signOn}
+                aria-label={signOn ? 'Stop signing' : 'Sign with the camera'}><SFHand size={20} /></button>
+        {composer}
       </div>
-      {composer}
     </>
   }
 
@@ -458,22 +486,10 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
       <header className="ic-head">
         <IOSAvatar name={name} size="sm" business={call.contact.kind === 'business'} />
         <div className="ic-who"><b>{name}</b><span className={reconnecting ? 'warn' : ''}>{status}</span></div>
+        {!preview && <button className="ic-headbtn" onClick={() => setShowing(true)} aria-label="Show it: film something instead of describing it"><SFVideo size={19} /></button>}
+        <button className={`ic-headbtn ${keypadOpen ? 'on' : ''}`} onClick={() => setKeypadOpen(!keypadOpen)} aria-label="Keypad"><SFKeypad size={18} /></button>
         <button className="ic-end" onClick={() => act('hangup')} aria-label="End call"><SFPhoneDown size={24} /></button>
       </header>
-      <div className="ic-modes">
-        <div className="ios-seg" role="radiogroup" aria-label="How you reply">
-          {COMMUNICATION_MODES.map((o) => (
-            <button key={o.id} role="radio" aria-checked={communicationMode === o.id} aria-label={o.label}
-              className={communicationMode === o.id ? 'on' : ''} onClick={() => switchMode(o.id)}>{o.short}</button>
-          ))}
-        </div>
-        <div className="ic-mode-hint">{modeInfo.hint}</div>
-      </div>
-      <div className="ic-controls" aria-label="Call controls">
-        <button className={muted ? 'on' : ''} onClick={() => setMuted(!muted)} aria-pressed={muted} aria-label={muted ? 'Unmute' : 'Mute'}>{muted ? <SFMicSlash size={21} /> : <SFMic size={21} />}<span>{muted ? 'muted' : 'mute'}</span></button>
-        <button className={speaker ? 'on' : ''} onClick={() => setSpeaker(!speaker)} aria-pressed={speaker} aria-label="Speaker"><SFSpeaker size={21} /><span>speaker</span></button>
-        <button className={keypadOpen ? 'on' : ''} onClick={() => setKeypadOpen(!keypadOpen)} aria-pressed={keypadOpen} aria-label="Keypad"><SFKeypad size={19} /><span>keypad</span></button>
-      </div>
       {call.notice && call.notice.kind !== 'reconnecting' && (
         <div className="ios-banner warn" role="alert"><SFExclamation size={18} /><span style={{ flex: 1 }}>{call.notice.text}</span>
           <button className="ios-link" style={{ fontSize: 15, fontWeight: 600 }} onClick={() => dispatch({ type: 'local_clear_notice', sid: call.sid })}>OK</button></div>
@@ -491,7 +507,7 @@ export function InCall({ call, online, dispatch, signing: signingProp = null, un
           {cameraActive && mode !== 'edit' && st !== 'CONFIRMING' && !reconnecting && (
             <SelfView className="ic-self" camera={!preview} onVideo={live.onVideo}
               signing={!!signing || !!unsure || (!!draft && draft.source === 'signs')}
-              label={unsure ? 'Pick one' : signing ? 'Reading signs' : 'Sign to reply'} caption={cameraCaption} />
+              label="Sign, then drop your hands" caption={cameraCaption} />
           )}
           <div className="ic-thread" ref={threadRef} aria-live="polite" style={{ fontSize: `${17 * capScale}px` }}>
             <div className="spacer" />

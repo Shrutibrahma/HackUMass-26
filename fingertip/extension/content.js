@@ -74,7 +74,7 @@
         <div class="card preview hide" id="ft-preview">
           <div style="flex:1;min-width:0"><div class="k" id="ft-preview-k">AI suggestion</div><div class="t" id="ft-preview-text"></div>
             <textarea class="hide" id="ft-edit" aria-label="Edit the sentence"></textarea></div>
-          <button class="btn" id="ft-editbtn">Edit</button><button class="btn" id="ft-cancel" aria-label="Discard">✕</button>
+          <button class="btn" id="ft-editbtn">Edit</button><button class="btn" id="ft-cancel" aria-label="Discard"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
           <button class="btn go" id="ft-show">Show ↵</button>
         </div>
         <div class="card menu hide" id="ft-menu">
@@ -92,9 +92,9 @@
             <button id="ft-mode-exact" role="radio" aria-checked="false" title="Shown exactly as typed">Exact</button>
           </div>
           <input id="ft-input" aria-label="Type what you want to say" autocomplete="off">
-          <button class="ib" id="ft-sign" data-tip="Sign instead" aria-label="Open signing camera">✋</button>
-          <button class="ib" id="ft-explain" data-tip="Explain what I'm showing (Alt+E)" aria-label="Explain what I'm showing">🔍</button>
-          <button class="ib" id="ft-more" data-tip="Settings" aria-label="Settings">⋯</button>
+          <button class="ib" id="ft-sign" data-tip="Sign instead" aria-label="Open signing camera"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg></button>
+          <button class="ib" id="ft-explain" data-tip="Explain what I'm showing (Alt+E)" aria-label="Explain what I'm showing"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/><path d="M11 8v3l2 1"/></svg></button>
+          <button class="ib" id="ft-more" data-tip="Settings" aria-label="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="19" cy="12" r="1.3" fill="currentColor"/></svg></button>
           <button class="ib" id="ft-min" data-tip="Minimise" aria-label="Minimise">–</button>
         </div>
       </div>`
@@ -222,7 +222,7 @@
         done.push('spoken')
       } else problems.push(`voice failed: ${r.error}`)
     }
-    if (!state.burn && !state.chat && !state.voice) problems.push('every output is off (⋯ settings)')
+    if (!state.burn && !state.chat && !state.voice) problems.push('every output is off (open Settings)')
     toast(`“${text}” ${done.length ? '→ ' + done.join(', ') : ''}${problems.length ? (done.length ? ' · ' : '') + problems.join(' · ') : ''}`,
       problems.length && !done.length ? 'bad' : 'good', 5000)
   }
@@ -309,7 +309,7 @@
     const m = event.data
     if (!m || m.source !== 'sign2speak') return
     if (m.type === 'partial') { if (state.burn) burn(clean(m.text), false); return }
-    if (m.type === 'send') { build(); showPreview(clean(m.text), 'From your signs'); toast('Signed sentence ready. Show it, edit it, or ✕.', 'info', 5000) }
+    if (m.type === 'send') { build(); showPreview(clean(m.text), 'From your signs'); toast('Signed sentence ready. Show it, edit it, or discard it.', 'info', 5000) }
   })
 
   window.addEventListener('keydown', (e) => {

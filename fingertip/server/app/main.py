@@ -830,6 +830,7 @@ class ClassifyIn(BaseModel):
     frames: list[dict]
     hand: str = "right"             # right | left | auto
     sid: Optional[str] = None       # live call: the caller's named options boost those signs
+    vocab: Optional[list[str]] = None   # restrict to these signs (the five call signs)
 
 
 @app.post("/api/signs/classify")
@@ -840,7 +841,7 @@ async def signs_classify(body: ClassifyIn, key: Optional[str] = None) -> dict:
     if c and c.analysis:
         options = c.analysis.options
     fr = body.frames[:240]
-    r = await asyncio.to_thread(state["signs"].classify, fr, body.hand, options)
+    r = await asyncio.to_thread(state["signs"].classify, fr, body.hand, options, body.vocab)
     # What the camera actually delivered: frames, duration, how often each hand and the face were seen.
     n = max(len(fr), 1)
     ts = [f.get("t") for f in fr if isinstance(f.get("t"), (int, float))]
