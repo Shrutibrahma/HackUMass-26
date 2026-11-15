@@ -31,3 +31,5 @@ def test_note_parser_rules():
     keys = {f.key: f.value for f in p.auto_facts}
     assert keys == {"order": "garlic bread and wings", "name": "Shruti"}
     assert p.needs_confirmation == ["tell me the total first"]
+
+

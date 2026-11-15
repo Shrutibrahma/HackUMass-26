@@ -17,12 +17,16 @@ import asyncio
 import io
 import logging
 import math
+import json
 import os
+import random
 import re
 import secrets
 import struct
 import time
 import wave
+
+from .signs.models import MODEL_DIR
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 from typing import Optional
@@ -33,8 +37,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from twilio.request_validator import RequestValidator
 
-from . import relay, translate
-from .ai import make_brain
+from . import grok_voice, relay, translate
+from .ai import RulesBrain, make_brain
+
+RulesBrainFallback = RulesBrain()
 from .show import VIDEO_TYPES, ShowStore, ask_video, make_video_engine, public_record, run_job, shared_record
 from .config import settings
 from .controller import ENDED, RINGING, Contact, Controller
@@ -43,6 +49,8 @@ from .telephony import make_telephony
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("main")
+
+COMMUNICATION_MODES = {"ai_assist", "sign_language", "exact_words", "captions_only"}
 
 
 # ------------------------------------------------------------------ state
@@ -77,6 +85,11 @@ class Hub:
                 return Contact(id=c.get("id", ""), name=c.get("name", number), number=number,
                                knows_sign=bool(c.get("knows_sign")), kind=c.get("kind", "person"),
                                style=c.get("style", ""), language=_language_or_english(c.get("language", "")))
+        # Server-side names for demo callers: KNOWN_CALLERS="+14135550123=Mom,+1617...=Dad"
+        for pair in os.getenv("KNOWN_CALLERS", "").split(","):
+            num, _, name = pair.partition("=")
+            if digits and name.strip() and re.sub(r"\D", "", num)[-10:] == digits:
+                return Contact(name=name.strip(), number=number, kind="person", knows_sign=False)
         return Contact(name=_pretty(number), number=number, kind="person", knows_sign=False)
 
 
@@ -106,6 +119,9 @@ def new_session(contact: Contact, direction: str, note: str = "") -> Controller:
 
 
 def twiml_for(c: Controller) -> str:
+    if grok_voice.grok_enabled():
+        # Grok realtime voice (VOICE_ENGINE=grok + XAI_API_KEY). Unverified on a live call.
+        return grok_voice.stream_twiml(c.id)
     return relay.relay_twiml(c.id, c.voice_id, c.lang.code if c.lang else None)
 
 
@@ -173,10 +189,38 @@ async def lifespan(app: FastAPI):
     state["signs"] = await asyncio.to_thread(SignService)
     if hasattr(state["brain"], "check"):
         asyncio.create_task(state["brain"].check())
+    def _grok_ctx(sid: str):
+        c = sessions.get(sid)
+        if not c or c.state == ENDED:
+            return None
+        return {"name": os.getenv("SIGNER_NAME", ""), "knows_sign": c.contact.knows_sign, "kind": c.contact.kind}
+    grok_voice.configure(_grok_ctx, hub.broadcast)
+    from .explain import warm_up
+    asyncio.create_task(warm_up())
     yield
 
 
 app = FastAPI(title=settings.app_name, lifespan=lifespan)
+
+# The Meet/Zoom extension's content script calls /api/signs/sentence and /api/tts from the meeting page.
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["https://meet.google.com"],
+    allow_origin_regex=r"https://([a-z0-9-]+\.)?zoom\.us|http://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
+
+
+@app.middleware("http")
+async def private_network_access(request: Request, call_next):
+    """Chrome asks before a public HTTPS page (Meet) calls a local server. Say yes for the extension's calls."""
+    response = await call_next(request)
+    if request.headers.get("access-control-request-private-network") == "true":
+        response.headers["Access-Control-Allow-Private-Network"] = "true"
+    return response
 
 
 async def twilio_form(request: Request) -> dict:
@@ -216,12 +260,19 @@ async def health() -> dict:
         "languages": {"available": multilingual_ready(), "list": translate.languages()},
         "show": {"available": state.get("video") is not None, "model": settings.gemini_video_model},
         "voice": settings.voice_string(hub.voice_id),
+        "voice_provider": settings.tts_provider,
+        "voice_model": settings.tts_model,
+        "webhooks": {
+            "incoming_voice": f"{settings.public_url}/twilio/voice",
+            "incoming_status": f"{settings.public_url}/twilio/status",
+        },
         "active_calls": sum(1 for c in sessions.values() if c.state != ENDED),
         "app_connected": len(hub.sockets),
         "bridges": len(bridges),
         "meet_voice": tts_provider() or None,
         "signs": state["signs"].config() if state["signs"] else None,
         "latency": latency.summary(),
+        "demo_available": True,
     }
 
 
@@ -231,6 +282,10 @@ async def health() -> dict:
 async def twilio_voice(request: Request) -> Response:
     form = await twilio_form(request)
     call_sid, caller = form.get("CallSid", ""), form.get("From", "")
+    # Twilio may retry a webhook. Keep it idempotent so one PSTN call creates one UI call.
+    existing = sessions.get(by_call_sid.get(call_sid, ""))
+    if existing:
+        return xml(relay.ringback_twiml(existing.id))
     c = new_session(hub.contact_for(caller), "incoming")
     c.call_sid = call_sid
     by_call_sid[call_sid] = c.id
@@ -363,7 +418,7 @@ async def ws_app(ws: WebSocket, key: Optional[str] = None) -> None:
         # Reattach: send every live (or just-ended) call so a reload picks up where it was.
         for c in list(sessions.values()):
             if c.state == RINGING and c.direction == "incoming":
-                await ws.send_json({"type": "ringing", "sid": c.id, "contact": asdict(c.contact)})
+                await ws.send_json({"type": "ringing", "sid": c.id, "contact": asdict(c.contact), "demo": c.demo})
             elif c.state != ENDED or (c.started_at and time.time() - c.started_at < 900):
                 await ws.send_json(c.snapshot())
         while True:
@@ -446,6 +501,11 @@ async def answer(sid: str, key: Optional[str] = None) -> dict:
     c = get_session(sid)
     if c.state != RINGING:
         return {"ok": True}
+    if c.demo:
+        c.started_at = c.started_at or time.time()
+        await demo_start(c)
+        await hub.broadcast(c.snapshot())
+        return {"ok": True}
     try:
         await state["telephony"].update_twiml(c.call_sid, twiml_for(c))
     except Exception as e:
@@ -463,8 +523,9 @@ async def decline(sid: str, key: Optional[str] = None) -> dict:
     check_key(key)
     c = get_session(sid)
     try:
-        await state["telephony"].update_twiml(
-            c.call_sid, relay.goodbye_twiml("Sorry, they can't pick up right now. Please try again later."))
+        if not c.demo:
+            await state["telephony"].update_twiml(
+                c.call_sid, relay.goodbye_twiml("Sorry, they can't pick up right now. Please try again later."))
     except Exception:
         log.exception("decline")
     await end_session(c, "declined")
@@ -480,7 +541,7 @@ async def hangup(sid: str, key: Optional[str] = None) -> dict:
             await c._relay_send(relay.end_message("hangup"))
         except Exception:
             pass
-    if c.call_sid:
+    if c.call_sid and not c.demo:
         await state["telephony"].hangup(c.call_sid)
     await end_session(c, "hangup")
     return {"ok": True, "recap": c.recap}
@@ -488,6 +549,143 @@ async def hangup(sid: str, key: Optional[str] = None) -> dict:
 
 class NoteIn(BaseModel):
     note: str
+
+
+# ---------------------------------------------------------------- SIMULATED demo mode
+# For when Twilio is unavailable. No telephony is touched; a scripted fake caller talks to the
+# signer. Every event and snapshot for these sessions carries "demo": true (Controller.emit).
+
+DEMO_SCRIPTS = {
+    "mom": ["Hi sweetie, it's Mom! When will you be home tonight?",
+            "Perfect. Can you pick up some milk on the way?",
+            "Thank you! Oh, and are you still coming Sunday?",
+            "Wonderful. Love you, see you soon!"],
+}
+
+
+def _demo_script(name: str, outgoing: bool) -> list[str]:
+    lines = DEMO_SCRIPTS.get(name.strip().lower())
+    if lines is None:
+        lines = [f"Hi, it's {name}! Do you have a minute?", "Great! How's your day going?",
+                 "Nice! Want to catch up later this week?", "Sounds good, talk soon!"]
+    return (["Hello?"] + lines[1:]) if outgoing else list(lines)
+
+
+def _demo_speed() -> float:
+    try:
+        return max(0.0, float(os.getenv("DEMO_SPEED", "1")))
+    except ValueError:
+        return 1.0
+
+
+class DemoRunner:
+    """In-process fake ConversationRelay + scripted caller."""
+
+    def __init__(self, c: Controller, lines: list[str]) -> None:
+        self.c, self.lines, self.idx = c, lines, 0
+        self.started = self.pending = self.owed = False
+        self.sent: list[str] = []          # what the signer "spoke" (no audio is produced)
+        self.task: Optional[asyncio.Task] = None
+
+    async def send(self, text: str) -> None:
+        try:
+            m = json.loads(text)
+        except ValueError:
+            return
+        if m.get("type") != "text":
+            return
+        self.sent.append(m.get("token", ""))
+        if self.c.spoken_log and self.c.spoken_log[-1][1] == "reply":     # not intro/filler/etc.
+            self.advance()
+
+    def advance(self) -> None:
+        if not self.started or self.idx >= len(self.lines):
+            return
+        if self.pending:
+            self.owed = True
+            return
+        self.pending = True
+        self.task = asyncio.create_task(self._deliver())
+
+    async def _deliver(self) -> None:
+        c, speed = self.c, _demo_speed()
+        try:
+            await asyncio.sleep(random.uniform(1.2, 2.0) * speed)
+            if c.state == ENDED or self.idx >= len(self.lines):
+                return
+            line = self.lines[self.idx]
+            self.idx += 1
+            words = line.split()
+            await c.on_prompt(" ".join(words[:max(1, len(words) // 2)]), False)
+            await asyncio.sleep(0.4 * speed)
+            if c.state == ENDED:
+                return
+            await c.on_prompt(line, True)
+        finally:
+            self.pending = False
+            if self.owed and c.state != ENDED:
+                self.owed = False
+                self.advance()
+
+
+async def demo_start(c: Controller) -> None:
+    """Attach the fake relay, then queue the caller's first line."""
+    r: DemoRunner = c.demo_runner
+    await c.attach_relay(r.send, {"callSid": c.call_sid})
+    r.started = True
+    r.pending = True
+    r.task = asyncio.create_task(r._deliver())
+    # Typed "captions only" sends never reach the relay; still move the script along.
+    orig = c.caption_only
+
+    async def caption_only(text: str, source: str = "typed") -> dict:
+        res = await orig(text, source)
+        if res.get("ok"):
+            r.advance()
+        return res
+
+    c.caption_only = caption_only
+
+
+class DemoIn(BaseModel):
+    name: str = "Mom"
+    number: str = "+14135550123"
+
+
+def _demo_session(body: DemoIn, direction: str) -> Controller:
+    name = (body.name or "Mom").strip()[:60] or "Mom"
+    contact = Contact(name=name, number=body.number, kind="person", knows_sign=False)
+    c = new_session(contact, direction)
+    c.demo = True
+    c.call_sid = "CADEMO" + secrets.token_hex(8)
+    c.demo_runner = DemoRunner(c, _demo_script(name, direction == "outgoing"))
+    by_call_sid[c.call_sid] = c.id
+    return c
+
+
+@app.post("/api/demo/incoming")
+async def demo_incoming(body: Optional[DemoIn] = None, key: Optional[str] = None) -> dict:
+    check_key(key)
+    c = _demo_session(body or DemoIn(), "incoming")
+    await hub.broadcast({"type": "ringing", "sid": c.id, "contact": asdict(c.contact), "demo": True})
+    return {"sid": c.id}
+
+
+async def _demo_connect_outgoing(c: Controller) -> None:
+    await asyncio.sleep(2.0 * _demo_speed())
+    if c.state == RINGING:
+        c.started_at = c.started_at or time.time()
+        await demo_start(c)
+        await hub.broadcast(c.snapshot())
+
+
+@app.post("/api/demo/outgoing")
+async def demo_outgoing(body: Optional[DemoIn] = None, key: Optional[str] = None) -> dict:
+    check_key(key)
+    c = _demo_session(body or DemoIn(), "outgoing")
+    await hub.broadcast(c.snapshot())          # state RINGING, demo true
+    c.demo_task = asyncio.create_task(_demo_connect_outgoing(c))
+    return {"sid": c.id}
 
 
 @app.post("/api/note/parse")
@@ -514,6 +712,7 @@ class SendIn(BaseModel):
     hash: Optional[str] = None      # required for source=draft: the hash shown with that draft
     tone: str = ""
     request_id: str = ""            # client-made; a retry with the same id is answered, not re-spoken
+    mode: str = ""                  # ai_assist | sign_language | exact_words | captions_only
 
 
 sent_requests: dict[str, dict] = {}     # request_id -> the answer it got (bounded)
@@ -523,15 +722,66 @@ sent_requests: dict[str, dict] = {}     # request_id -> the answer it got (bound
 async def send(sid: str, body: SendIn, key: Optional[str] = None) -> dict:
     check_key(key)
     c = get_session(sid)
+    mode = body.mode or c.mode
+    if mode not in COMMUNICATION_MODES:
+        raise HTTPException(400, "Unknown communication mode.")
+    if mode != c.mode:
+        await c.set_mode(mode)
     rid = body.request_id[:80]
     if rid and rid in sent_requests:
         return {**sent_requests[rid], "request_id": rid, "duplicate": True}
-    r = await c.send(body.text, body.source, body.signs, body.draft_id, body.force, body.hash, body.tone)
+    if mode == "captions_only":
+        r = await c.caption_only(body.text, body.source)
+    elif body.mode == "ai_assist" and body.source == "typed":
+        # Only an explicit AI Assist request may rewrite. A typed send with no mode is spoken as typed.
+        # First tap creates a visible/editable preview. A second, explicit approval sends source=draft+hash.
+        draft = await c.draft_from_text(body.text, mode, body.tone)
+        r = {"ok": True, "spoken": False, "requires_approval": True, "draft": asdict(draft)}
+    else:
+        bridge = grok_voice.bridges.get(sid)
+        if bridge is not None:
+            # Grok engine: the approved text answers Grok's pending get_reply (numbers/times go word for word).
+            r = await bridge.deliver_reply(body.text, mode == "exact_words")
+        else:
+            r = await c.send(body.text, body.source, body.signs, body.draft_id, body.force, body.hash, body.tone)
     if rid:
         sent_requests[rid] = r
         while len(sent_requests) > 500:
             sent_requests.pop(next(iter(sent_requests)))
     return {**r, "request_id": rid} if rid else r
+
+
+class ModeIn(BaseModel):
+    mode: str
+
+
+@app.post("/api/calls/{sid}/mode")
+async def set_mode(sid: str, body: ModeIn, key: Optional[str] = None) -> dict:
+    check_key(key)
+    if body.mode not in COMMUNICATION_MODES:
+        raise HTTPException(400, "Unknown communication mode.")
+    c = get_session(sid)
+    await c.set_mode(body.mode)
+    return {"ok": True, "mode": c.mode}
+
+
+class ComposeIn(BaseModel):
+    text: str
+    mode: str = "ai_assist"
+    tone: str = ""
+
+
+@app.post("/api/calls/{sid}/compose")
+async def compose(sid: str, body: ComposeIn, key: Optional[str] = None) -> dict:
+    """Generate an editable preview. This endpoint never sends audio."""
+    check_key(key)
+    if body.mode not in COMMUNICATION_MODES:
+        raise HTTPException(400, "Unknown communication mode.")
+    c = get_session(sid)
+    await c.set_mode(body.mode)
+    draft = await c.draft_from_text(body.text, body.mode, body.tone)
+    return {"ok": True, "mode": body.mode, "requires_approval": body.mode == "ai_assist",
+            "spoken": False, "draft": asdict(draft)}
 
 
 class SignsIn(BaseModel):
@@ -580,6 +830,7 @@ class ClassifyIn(BaseModel):
     frames: list[dict]
     hand: str = "right"             # right | left | auto
     sid: Optional[str] = None       # live call: the caller's named options boost those signs
+    vocab: Optional[list[str]] = None   # restrict to these signs (the five call signs)
 
 
 @app.post("/api/signs/classify")
@@ -589,11 +840,49 @@ async def signs_classify(body: ClassifyIn, key: Optional[str] = None) -> dict:
     c = sessions.get(body.sid or "")
     if c and c.analysis:
         options = c.analysis.options
-    r = await asyncio.to_thread(state["signs"].classify, body.frames[:240], body.hand, options)
+    fr = body.frames[:240]
+    r = await asyncio.to_thread(state["signs"].classify, fr, body.hand, options, body.vocab)
+    # What the camera actually delivered: frames, duration, how often each hand and the face were seen.
+    n = max(len(fr), 1)
+    ts = [f.get("t") for f in fr if isinstance(f.get("t"), (int, float))]
+    dur = (ts[-1] - ts[0]) / 1000 if len(ts) > 1 else 0.0
+    seen = {k: round(sum(1 for f in fr if f.get(k)) / n, 2) for k in ("pose", "lh", "rh", "fx")}
+    if not r.get("ok") and "_top" in r:
+        log.info("sign (noise) top=%s p=%s | %d frames", r.pop("_top"), r.pop("_p"), len(fr))
     if r.get("ok"):
         latency.record("sign_classify_ms", r["ms"])
-        log.info("sign %s unsure=%s top=%s p=%s", r["sign"], r["unsure"], r.pop("_top"), r.pop("_p"))
+        log.info("sign %s unsure=%s top=%s p=%s | %d frames %.1fs %.0ffps seen=%s hand=%s", r["sign"], r["unsure"],
+                 r.pop("_top"), r.pop("_p"), len(fr), dur, len(fr) / dur if dur else 0, seen, body.hand)
+    try:  # last 200 live segments, landmarks only, for debugging recognition on this machine
+        os.makedirs(os.path.join(MODEL_DIR, "data"), exist_ok=True)
+        with open(os.path.join(MODEL_DIR, "data", "live.jsonl"), "a") as f:
+            f.write(json.dumps({"t": time.time(), "hand": body.hand, "sign": r.get("sign"), "frames": fr}) + "\n")
+    except Exception:
+        pass
     return r
+
+
+class TeachIn(BaseModel):
+    label: str                      # any word or short phrase, in any sign language
+    frames: list[dict]
+    hand: str = "right"
+
+
+@app.post("/api/signs/teach")
+async def signs_teach(body: TeachIn, key: Optional[str] = None) -> dict:
+    """The signer teaches one example of their own sign (landmarks only)."""
+    check_key(key)
+    if not state["signs"]:
+        raise HTTPException(503, "Signing isn't available right now.")
+    return await asyncio.to_thread(state["signs"].teach, body.label, body.frames[:240], body.hand)
+
+
+@app.delete("/api/signs/personal/{label}")
+async def signs_forget(label: str, last: bool = False, key: Optional[str] = None) -> dict:
+    check_key(key)
+    p = state["signs"].personal
+    n = (1 if p.remove_last(label) else 0) if last else p.remove(label)
+    return {"ok": True, "removed": n, "personal": p.labels()}
 
 
 class RecordIn(BaseModel):
@@ -618,6 +907,28 @@ async def signs_recordings(key: Optional[str] = None) -> dict:
 class SentenceIn(BaseModel):
     signs: list[str]
     style: str = "casual"
+
+
+class ExpandIn(BaseModel):
+    text: str
+    context: str = ""               # what the other person just said, if known
+    style: str = "casual"           # casual | polite
+
+
+@app.post("/api/expand")
+async def expand_text(body: ExpandIn, key: Optional[str] = None) -> dict:
+    """AI Assist outside a phone call (meeting extension): shorthand -> one natural sentence, guarded."""
+    check_key(key)
+    from . import guards
+    hint = body.text.strip()[:300]
+    ctx = {"contact_name": "people in a meeting", "casual": body.style != "polite", "note_facts": [], "recent": []}
+    t0 = time.perf_counter()
+    text = await state["brain"].write_typed_reply(hint, body.context[:400], ctx, "neutral")
+    problems = guards.fact_guard(text, [hint, body.context]).problems
+    if problems:
+        text = await RulesBrainFallback.write_typed_reply(hint, body.context, ctx, "neutral")
+    latency.record("expand_ms", (time.perf_counter() - t0) * 1000)
+    return {"text": text, "ms": round((time.perf_counter() - t0) * 1000), "guarded": bool(problems)}
 
 
 @app.post("/api/signs/sentence")
@@ -931,6 +1242,20 @@ async def plain_errors(request: Request, exc: Exception) -> JSONResponse:
 
 # ---------------------------------------------------------------- static app
 
+@app.get("/ext-test")
+async def ext_test() -> Response:
+    """Stand-in meeting page for testing the Chrome extension (it matches /ext-test like Meet)."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "ext-test.html"))
+
+
+from .rooms import router as rooms_router  # noqa: E402  browser video calls (must precede the SPA catch-all)
+
+app.include_router(rooms_router)
+app.include_router(grok_voice.router)
+from .explain import router as explain_router  # noqa: E402
+
+app.include_router(explain_router)
+
 _static = settings.static_dir or os.path.join(os.path.dirname(__file__), "..", "..", "app", "dist")
 if os.path.isdir(_static):
     app.mount("/assets", StaticFiles(directory=os.path.join(_static, "assets")), name="assets")
@@ -941,3 +1266,5 @@ if os.path.isdir(_static):
         if path and f.startswith(os.path.normpath(_static)) and os.path.isfile(f):
             return FileResponse(f)
         return FileResponse(os.path.join(_static, "index.html"))
+
+

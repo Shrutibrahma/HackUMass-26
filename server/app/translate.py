@@ -217,3 +217,5 @@ TRANSLATE_RULES = """Translate for a live phone call. Rules:
 - Keep names exactly as written.
 - Sound like a person talking on the phone, not a document. One or two short sentences.
 - Output only the translation."""
+
+

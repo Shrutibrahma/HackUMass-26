@@ -8,3 +8,5 @@
 - **Checkpoint:** which pretrained model, and its preprocessing (landmark order, normalization, missing points, frame sampling).
 - **Sign forms checked by:** fluent signer (name/role, with permission).
 - **Known gaps:** signs or conditions that fail.
+
+

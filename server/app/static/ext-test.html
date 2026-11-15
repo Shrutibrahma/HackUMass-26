@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extension test meeting</title>
+<style>
+  body { margin: 0; background: #202124; color: #e8eaed; font: 15px system-ui, sans-serif; }
+  header { padding: 14px 18px; font-weight: 700; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 18px; }
+  figure { margin: 0; background: #3c4043; border-radius: 12px; overflow: hidden; }
+  video { width: 100%; display: block; aspect-ratio: 16/9; background: #000; }
+  figcaption { padding: 8px 12px; font-size: 13px; color: #bdc1c6; }
+  #log { padding: 12px 18px; color: #9aa0a6; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>Stand-in meeting (tests the Fingertip extension; not Google Meet)</header>
+<div class="grid">
+  <figure><video id="sent" autoplay muted playsinline></video><figcaption>What this meeting would SEND to everyone (the stream getUserMedia returned)</figcaption></figure>
+  <figure><video id="remote" autoplay muted playsinline></video><figcaption>Received by a second peer over a real RTCPeerConnection</figcaption></figure>
+</div>
+<div id="log">Starting camera…</div>
+<script>
+  // Like Meet: ask for camera + mic, then send the track over WebRTC. Here the "remote" is a local loopback peer.
+  const log = (t) => { document.getElementById('log').textContent = t }
+  async function start() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: true })
+    document.getElementById('sent').srcObject = stream
+    const a = new RTCPeerConnection(), b = new RTCPeerConnection()
+    a.onicecandidate = (e) => e.candidate && b.addIceCandidate(e.candidate)
+    b.onicecandidate = (e) => e.candidate && a.addIceCandidate(e.candidate)
+    b.ontrack = (e) => { document.getElementById('remote').srcObject = e.streams[0] }
+    stream.getTracks().forEach((t) => a.addTrack(t, stream))
+    await a.setLocalDescription(await a.createOffer()); await b.setRemoteDescription(a.localDescription)
+    await b.setLocalDescription(await b.createAnswer()); await a.setRemoteDescription(b.localDescription)
+    log(`Camera on. Tracks: ${stream.getTracks().map((t) => t.kind).join(', ')}. Wrapped by extension: ${!!window.__fingertipWrapped} (${window.__fingertipMode || 'none'})`)
+  }
+  // Fraction of dark and of bright pixels in the bottom-centre band of a video (where captions are drawn).
+  window.band = (id) => {
+    const v = document.getElementById(id)
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight
+    const x = c.getContext('2d'); x.drawImage(v, 0, 0)
+    const y0 = Math.round(c.height * 0.72), y1 = Math.round(c.height * 0.95)
+    const d = x.getImageData(Math.round(c.width * 0.2), y0, Math.round(c.width * 0.6), y1 - y0).data
+    let dark = 0, white = 0, n = d.length / 4
+    for (let i = 0; i < d.length; i += 4) {
+      const m = (d[i] + d[i + 1] + d[i + 2]) / 3
+      if (m < 40) dark++
+      if (d[i] > 225 && d[i + 1] > 225 && d[i + 2] > 225) white++
+    }
+    return { w: c.width, h: c.height, dark: +(dark / n).toFixed(3), white: +(white / n).toFixed(3) }
+  }
+  start().catch((e) => log('Camera failed: ' + e.name))
+</script>
+</body>
+</html>

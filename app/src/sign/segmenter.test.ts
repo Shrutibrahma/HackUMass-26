@@ -8,11 +8,11 @@ POSE[12] = [0.38, 0.45]
 const hand = (x: number, y: number, spread = 0): P[] =>
   Array.from({ length: 21 }, (_, i) => [x + (i % 5) * 0.01 * (1 + spread), y - Math.floor(i / 5) * 0.01] as P)
 
-function run(script: [ms: number, fn: (k: number) => P[] | null][]) {
+function run(script: [ms: number, fn: (k: number) => P[] | null][], split: 'drop' | 'pause' = 'pause') {
   const segs: Frame[][] = []
   let ends = 0
   let starts = 0
-  const s = new Segmenter({ onStart: () => starts++, onSegment: (f) => segs.push(f), onPhraseEnd: () => ends++ })
+  const s = new Segmenter({ onStart: () => starts++, onSegment: (f) => segs.push(f), onPhraseEnd: () => ends++ }, { split })
   let t = 0
   for (const [ms, fn] of script) {
     const n = Math.round(ms / 33.3)
@@ -28,17 +28,34 @@ const still = (x: number, y: number) => () => hand(x, y)
 const moving = (x0: number, y0: number, dx: number, dy: number) => (u: number) => hand(x0 + dx * u, y0 + dy * u)
 const wiggle = (x: number, y: number) => (u: number) => hand(x + 0.06 * Math.sin(u * 12), y + 0.04 * Math.cos(u * 9))
 
+describe('Segmenter (one sign per raise)', () => {
+  it('one segment per raise of the hands, phrase ends after a longer rest', () => {
+    const r = run([
+      [500, () => null],
+      [900, wiggle(0.5, 0.5)],                   // YES (repeated motion stays one sign)
+      [500, () => null],                         // hands down briefly
+      [700, moving(0.5, 0.5, 0.15, 0.05)],       // PLEASE
+      [500, () => null],
+      [800, still(0.5, 0.5)],                    // a held sign still counts
+      [1800, () => null],                        // rest: phrase done
+    ], 'drop')
+    expect(r.segs.length).toBe(3)
+    expect(r.starts).toBe(1)
+    expect(r.ends).toBe(1)
+  })
+})
+
 describe('Segmenter', () => {
   it('splits a phrase into one segment per pause and ends it when hands drop', () => {
     const r = run([
       [500, () => null],                         // hands down
       [400, moving(0.5, 0.9, 0, -0.4)],          // raise into signing space
       [500, wiggle(0.5, 0.5)],                   // sign 1 (YES)
-      [400, still(0.5, 0.5)],                    // pause
+      [650, still(0.5, 0.5)],                    // pause
       [500, moving(0.5, 0.5, 0.15, 0.05)],       // sign 2 (SUNDAY)
-      [400, still(0.65, 0.55)],                  // pause
+      [650, still(0.65, 0.55)],                  // pause
       [500, wiggle(0.6, 0.5)],                   // sign 3 (COME)
-      [400, still(0.6, 0.5)],
+      [650, still(0.6, 0.5)],
       [700, () => null],                         // hands drop
     ])
     expect(r.starts).toBe(1)
@@ -86,3 +103,5 @@ describe('Segmenter', () => {
     expect(r.ends).toBe(1)
   })
 })
+
+

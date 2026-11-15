@@ -6,6 +6,8 @@ node_modules/
 app/dist/
 logs/
 .env
+tokens.env
+*.env.local
 *.onnx.tmp
 model/data/
 # Source weights (re-download with model/download_models.sh); the runtime only needs signbart.onnx.
@@ -18,3 +20,5 @@ server/data/
 # Claude Code: shared settings are committed; personal and machine-specific files are not
 .claude/settings.local.json
 .claude/launch.json
+
+

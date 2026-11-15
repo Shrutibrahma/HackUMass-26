@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { post } from '../api'
-import { APP_NAME } from '../brand'
+import { APP_NAME, TAGLINE } from '../brand'
 import { ago, avatarTone, CAPTION_SIZES, DEFAULT_QUICK, initials, INTRO_STYLES, introFor, prettyNumber, VOICES, type IntroStyle } from '../data'
 import { Back, Gear, People, Play, Video as VideoIcon } from '../icons'
 import type { Contact, Recent } from '../types'
+import { IOSAvatar, StatusBar } from './Phone'
+import { SFChevronLeft, SFPhone } from '../sf'
 
 export function Avatar({ c, size = '' }: { c: Pick<Contact, 'name' | 'kind' | 'knows_sign' | 'id'>; size?: string }) {
   return <div className={`av ${avatarTone(c)} ${size}`} aria-hidden>{initials(c.name)}</div>
@@ -81,6 +83,8 @@ type HomeProps = {
   onInPerson: () => void
   onSettings: () => void
   onShow?: () => void
+  onVideo?: () => void
+  onDemo?: () => void
   tabs?: React.ReactNode
 }
 
@@ -97,7 +101,7 @@ export function Tabs({ tab, onTab }: { tab: Tab; onTab: (t: Tab) => void }) {
   )
 }
 
-export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, onSettings, onShow, tabs }: HomeProps) {
+export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, onSettings, onShow, onVideo, onDemo, tabs }: HomeProps) {
   const [sheet, setSheet] = useState<'pad' | 'new' | null>(null)
   const favs = contacts.filter((c) => c.fav)
   const find = (r: Recent) => contacts.find((c) => c.id === r.contactId)
@@ -109,6 +113,7 @@ export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, on
         <div className="title-row" style={tabs ? { marginTop: 12 } : undefined}>
           <div>
             <h1>Calls</h1>
+            <div className="fine">{TAGLINE}</div>
             {!online && <div className="fine" style={{ color: 'var(--amber)' }}>Connecting to the server...</div>}
           </div>
           <button className="gear" onClick={onSettings} aria-label="Settings"><Gear size={22} /></button>
@@ -128,10 +133,21 @@ export function Home({ contacts, recents, online, onOpen, onDial, onInPerson, on
           <span className="ico"><People size={22} /></span>
           <span><b>Talk in person</b><small>Flip your phone so they can read</small></span>
         </button>
+        {onVideo && (
+          <button className="cardbox tip" onClick={onVideo}>
+            <span className="ico"><VideoIcon size={22} /></span>
+            <span><b>Video call with captions</b><small>Send a link. They join in any browser, no app.</small></span>
+          </button>
+        )}
         {onShow && (
           <button className="cardbox tip" onClick={onShow}>
             <span className="ico"><VideoIcon size={22} /></span>
             <span><b>Show it</b><small>Film a problem instead of describing it</small></span>
+          </button>
+        )}
+        {onDemo && (
+          <button className="link" style={{ alignSelf: 'flex-start', fontSize: 13, opacity: .7 }} onClick={onDemo}>
+            Rehearse: simulated call from Mom (no real phone)
           </button>
         )}
         <div className="label" style={{ marginTop: 6 }}>Recent</div>
@@ -397,36 +413,39 @@ export function ErrandNote({ contact, onBack, onCall, busy, error, onParsed, pre
   if (says.length && !checks.includes('Placing the order') && parsed?.auto_facts.some((f) => f.key === 'order')) checks.push('Placing the order')
 
   return (
-    <div className="screen">
-      <div className="head-white" style={{ position: 'relative', paddingLeft: 64 }}>
-        <button className="back" onClick={onBack} aria-label="Back" style={{ top: 'calc(28px + env(safe-area-inset-top))' }}><Back /></button>
-        <div className="fine" style={{ fontSize: 15 }}>Calling</div>
-        <h1 style={{ fontSize: 28 }}>{contact.name}</h1>
-        <div className="fine" style={{ fontSize: 15 }}>{prettyNumber(contact.number)}</div>
+    <div className="screen ios phone">
+      <StatusBar />
+      <div className="ios-nav"><button onClick={onBack}><SFChevronLeft size={22} />Back</button><span /></div>
+      <div className="scroll">
+        <div className="card-head" style={{ paddingBottom: 10 }}>
+          <IOSAvatar name={contact.name} size="md" business={contact.kind === 'business'} />
+          <h1 style={{ fontSize: 26 }}>{contact.name}</h1>
+          <span className="sub">{prettyNumber(contact.number)}</span>
+        </div>
+        <div className="ios-section-h">What's the call for? (optional)</div>
+        <div className="ios-group" style={{ padding: '4px 4px' }}>
+          <textarea id="note" className="note-ios" value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+                    aria-label="Note for the call"
+                    placeholder="e.g. order garlic bread, name Shruti, tell me the total first" />
+        </div>
+        {says.length > 0 && <>
+          <div className="ios-section-h" style={{ color: 'var(--sys-blue)' }}>I can say for you</div>
+          <div className="note-tags">{says.map((x) => <span key={x} className="blue">{x}</span>)}</div>
+        </>}
+        {checks.length > 0 && <>
+          <div className="ios-section-h" style={{ color: 'var(--sys-orange)' }}>I'll check with you first</div>
+          <div className="note-tags">{checks.map((x) => <span key={x} className="amber">{x}</span>)}</div>
+        </>}
+        <p className="ios-section-f">Anything about money or bookings always waits for your tap.</p>
+        {error && <div className="ios-banner bad" role="alert">{error}</div>}
       </div>
-      <div className="scroll pad16">
-        <label htmlFor="note" style={{ fontSize: 18 }}><b>Add a note</b> <span style={{ color: 'var(--ink-2)' }}>(optional)</span></label>
-        <textarea id="note" className="note-area" value={note} onChange={(e) => setNote(e.target.value)}
-                  placeholder="What's the call for? e.g. order garlic bread, name Shruti, tell me the total first" />
-        {(says.length > 0 || checks.length > 0) && (
-          <div className="cardbox boxpad">
-            {says.length > 0 && <>
-              <div className="label cap-blue">I can say for you</div>
-              <div className="chipset">{says.map((s) => <span key={s} className="tag blue">{s}</span>)}</div>
-            </>}
-            {checks.length > 0 && <>
-              <div className="label cap-amber" style={{ marginTop: 6 }}>I'll check with you first</div>
-              <div className="chipset">{checks.map((s) => <span key={s} className="tag amber">{s}</span>)}</div>
-            </>}
-          </div>
-        )}
-        <p className="fine">Anything about money or bookings always waits for your tap.</p>
-        {error && <div className="err" role="alert">{error}</div>}
-      </div>
-      <div className="foot">
-        <button className="btn btn-ghost" onClick={() => onCall('')} disabled={busy}>Skip</button>
-        <button className="btn btn-blue grow" onClick={() => onCall(note)} disabled={busy}>{busy ? 'Calling...' : 'Call'}</button>
+      <div className="after-foot">
+        <button className="ios-btn gray" onClick={() => onCall('')} disabled={busy}>Skip</button>
+        <button className="ios-btn" style={{ background: 'var(--sys-green)', color: '#fff' }} onClick={() => onCall(note)} disabled={busy}>
+          {busy ? <span className="spin" /> : <SFPhone size={18} />} {busy ? 'Calling…' : 'Call'}</button>
       </div>
     </div>
   )
 }
+
+

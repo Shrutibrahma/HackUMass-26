@@ -14,13 +14,15 @@ type Opts = {
   /** Hands dropped: the phrase is done. */
   onPhrase?: (signs: string[]) => void
   enabled?: boolean
+  /** Only these signs (e.g. the five call signs): fewer choices, far fewer mistakes. */
+  vocab?: string[]
 }
 
 /**
  * Camera frames -> MediaPipe Holistic (in the browser) -> one sign per pause -> server classifier.
  * Only landmarks leave the phone. Returns what the UI needs; no numbers, no skeletons.
  */
-export function useSigning({ sid, onSigns, onPhrase, enabled = true }: Opts) {
+export function useSigning({ sid, onSigns, onPhrase, enabled = true, vocab }: Opts) {
   const [signs, setSigns] = useState<string[] | null>(null)       // non-null while signing
   const [unsure, setUnsure] = useState<string[] | null>(null)
   const [video, setVideo] = useState<HTMLVideoElement | null>(null)
@@ -28,11 +30,12 @@ export function useSigning({ sid, onSigns, onPhrase, enabled = true }: Opts) {
   const cb = useRef({ onSigns, onPhrase })
   cb.current = { onSigns, onPhrase }
 
+  const vocabKey = vocab?.join(',') ?? ''
   useEffect(() => {
     if (!enabled || !video) return
     const hand = getHand()
     const p = new SignPipeline(
-      (frames) => post('/api/signs/classify', { frames: wireFrames(frames), hand, sid }),
+      (frames) => post('/api/signs/classify', { frames: wireFrames(frames), hand, sid, vocab: vocabKey ? vocabKey.split(',') : undefined }),
       {
         onSigningStart: () => setSigns([]),
         onSigns: (s) => { setSigns(s); if (s.length) cb.current.onSigns?.(s) },
@@ -43,7 +46,7 @@ export function useSigning({ sid, onSigns, onPhrase, enabled = true }: Opts) {
     pipe.current = p
     const stop = watch(video, (f) => p.push(f))
     return () => { stop(); pipe.current = null }
-  }, [enabled, video, sid])
+  }, [enabled, video, sid, vocabKey])
 
   const pick = useCallback((o: string) => { setUnsure(null); pipe.current?.pick(o) }, [])
   const again = useCallback(() => { setUnsure(null); setSigns(null); pipe.current?.clear() }, [])
@@ -52,3 +55,5 @@ export function useSigning({ sid, onSigns, onPhrase, enabled = true }: Opts) {
 
 /** "TWELVE" -> "Twelve", "THANK-YOU" -> "Thank you" (for the unsure-sign buttons). */
 export const pretty = (g: string) => (g.charAt(0) + g.slice(1).toLowerCase()).replace(/-/g, ' ')
+
+

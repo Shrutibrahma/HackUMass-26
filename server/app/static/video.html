@@ -1,0 +1,1014 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#000000">
+<meta name="description" content="Browser video call with live captions (not FaceTime). No app needed.">
+<title>Video Call</title>
+<style>
+/* Tokens + primitives copied from app/src/ios.css; the .ft-* rules are app/src/screens/video.css verbatim.
+   Keep both in sync so the host (React) and guest (this page) look identical. */
+:root {
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --sys-blue: #0a84ff; --sys-green: #30d158; --sys-red: #ff453a; --sys-orange: #ff9f0a; --sys-yellow: #ffd60a; --sys-indigo: #5e5ce6; --sys-teal: #64d2ff;
+  --sys-gray: #8e8e93; --sys-gray2: #636366; --sys-gray3: #48484a;
+  --label: #ffffff; --label-2: rgba(235, 235, 245, .6); --label-3: rgba(235, 235, 245, .3);
+  --material: rgba(30, 30, 32, .72);
+  --ease: cubic-bezier(.32, .72, 0, 1);
+}
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { font-family: var(--font); color: var(--label); -webkit-font-smoothing: antialiased; letter-spacing: -0.01em; -webkit-text-size-adjust: 100%; }
+[hidden] { display: none !important; }
+#ft { position: fixed; inset: 0; }
+.ft button:focus-visible, .ft input:focus-visible { outline: 2px solid var(--sys-blue); outline-offset: 2px; }
+@keyframes ios-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+/* ==========================================================================
+   Video call (FaceTime-style layout, original styling, no Apple assets).
+   Shared visual language with server/app/static/video.html (the guest page copies this file's rules
+   verbatim, so keep the two in sync). Tokens come from ios.css (--material, --sys-*, --ease, --font).
+   ========================================================================== */
+.ft { position: relative; overflow: hidden; background: #000; color: #fff; user-select: none; -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent; --safe-t: env(safe-area-inset-top, 0px); --safe-b: env(safe-area-inset-bottom, 0px);
+  --chrome-h: 120px; --cap-scale: 1; --top-h: 64px; }
+:where(.ft) button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+:where(.ft) svg { display: block; flex: none; }
+:where(.ft) input { font: inherit; }
+
+/* ---- video tiles: one is full-bleed (.big), the other is the floating picture-in-picture (.pip) */
+.ft-stage { position: absolute; inset: 0; container-type: size; }
+.ft-tile { position: absolute; left: 0; top: 0; overflow: hidden; background: #1c1c1e;
+  transition: transform .3s var(--ease), width .3s var(--ease), height .3s var(--ease), border-radius .3s var(--ease), opacity .3s var(--ease); }
+.ft-tile.big { width: 100%; height: 100%; border-radius: 0; z-index: 1; transform: none; }
+.ft-tile.pip { z-index: 6; border-radius: 16px; cursor: grab; touch-action: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,.45), 0 0 0 .5px rgba(255,255,255,.18); }
+.ft-tile.pip.dragging { transition: none; cursor: grabbing; }
+.ft-tile.gone { opacity: 0; pointer-events: none; }
+.ft-tile video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: transparent; }
+.ft-tile.self video { transform: scaleX(-1); }
+.ft-tile .ft-backdrop { display: none; filter: blur(36px) brightness(.55) saturate(1.3); transform: scale(1.2); }
+@container (min-aspect-ratio: 5/4) {
+  .ft-tile.big.remote video.main { object-fit: contain; }
+  .ft-tile.big.remote .ft-backdrop { display: block; }
+}
+
+/* camera off / audio only: a monogram on a soft gradient (like a contact card) */
+.ft-off { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+  background: radial-gradient(120% 80% at 50% 30%, #3a3d46 0%, #1b1c21 70%); text-align: center; }
+.ft-tile.camoff .ft-off { display: flex; }
+.ft-off .ft-avatar { width: 96px; height: 96px; font-size: 40px; }
+.ft-off small { font: 500 15px/1.3 var(--font); color: var(--label-2); max-width: 80%; }
+.ft-tile.pip .ft-off { gap: 4px; }
+.ft-tile.pip .ft-off .ft-avatar { width: 44px; height: 44px; font-size: 18px; }
+.ft-tile.pip .ft-off small { font-size: 11px; }
+.ft-avatar { flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; text-transform: uppercase;
+  background: linear-gradient(180deg, #a5abb8 0%, #858994 100%); width: 36px; height: 36px; font-size: 15px; letter-spacing: 0; }
+.ft-avatar svg { width: 58%; height: 58%; }
+
+/* small badges on a tile (remote muted) */
+.ft-badge { position: absolute; top: 8px; left: 8px; z-index: 2; width: 26px; height: 26px; border-radius: 50%; display: none; place-items: center;
+  background: rgba(0,0,0,.5); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); }
+.ft-tile.micoff .ft-badge { display: grid; }
+.ft-tile.big .ft-badge { top: calc(var(--safe-t) + var(--top-h) + 10px); left: 16px; width: 32px; height: 32px; }
+
+/* mini caption on the picture-in-picture tile (host's own video on the host side) */
+.ft-mini { position: absolute; left: 6px; right: 6px; bottom: 6px; z-index: 2; padding: 4px 7px; border-radius: 9px; background: rgba(0,0,0,.62);
+  font: 600 12px/1.25 var(--font); max-height: calc(2 * 1.25em + 8px); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end;
+  transition: opacity .3s var(--ease); }
+.ft-mini.partial { font-style: italic; color: rgba(255,255,255,.75); }
+.ft-mini.fading { opacity: 0; }
+.ft-tile.big .ft-mini { display: none; }
+
+/* ---- top chrome: name/status pill + round buttons */
+.ft-top { position: absolute; z-index: 20; left: 12px; right: 12px; top: calc(var(--safe-t) + 12px); display: flex; align-items: flex-start; gap: 8px;
+  transition: transform .3s var(--ease), opacity .3s var(--ease); }
+.ft-pill { display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 8px 18px 8px 8px; border-radius: 26px; min-width: 0; max-width: 100%; }
+.ft-pill .ft-avatar { width: 36px; height: 36px; }
+.ft-pill .txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ft-pill b { font: 600 15px/1.2 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ft-pill .txt > span { font: 400 13px/1.2 var(--font); color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 6px; }
+.ft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sys-orange); flex: none; animation: ios-pulse 1.4s ease-in-out infinite; }
+.ft-dot.ok { background: var(--sys-green); animation: none; }
+.ft-dot.bad { background: var(--sys-red); animation: none; }
+.ft-spacer { flex: 1; }
+.ft-round { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; color: #fff; transition: background .2s var(--ease), transform .15s; }
+.ft-round:active { transform: scale(.94); }
+.ft-material { background: rgba(28,28,30,.62); backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.1) inset, 0 8px 24px rgba(0,0,0,.25); }
+
+/* ---- bottom chrome: composer + control capsule */
+.ft-bottom { position: absolute; z-index: 20; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 16px); display: flex; flex-direction: column;
+  align-items: center; gap: 10px; transition: transform .3s var(--ease), opacity .3s var(--ease); }
+.ft-capsule { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 40px; }
+.ft-cbtn { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: rgba(255,255,255,.16);
+  transition: background .2s var(--ease), color .2s var(--ease), transform .15s; }
+.ft-cbtn:active { transform: scale(.93); }
+.ft-cbtn.off { background: #fff; color: #000; }          /* FaceTime: a white disc means "this is off" */
+.ft-cbtn.lit { background: var(--sys-blue); }             /* a feature switched on (signing) */
+.ft-cbtn.end { background: var(--sys-red); }
+.ft-cbtn:disabled { opacity: .35; cursor: default; }
+.ft.chrome-off .ft-top { transform: translateY(calc(-100% - 24px - var(--safe-t))); opacity: 0; pointer-events: none; }
+.ft.chrome-off .ft-bottom > :not(.keep) { transform: translateY(calc(100% + 40px)); opacity: 0; pointer-events: none; }
+.ft-bottom > * { transition: transform .3s var(--ease), opacity .3s var(--ease); }
+
+/* composer (host): iMessage-style field with a send arrow, plus the AI toggle */
+.ft-compose { width: min(100%, 440px); display: flex; align-items: flex-end; gap: 8px; }
+.ft-ai { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex: none; color: #fff; transition: background .2s var(--ease), color .2s; }
+.ft-ai.on { background: var(--sys-blue); box-shadow: none; }
+.ft-field { flex: 1; min-width: 0; min-height: 44px; display: flex; align-items: center; gap: 6px; border-radius: 22px; padding: 4px 4px 4px 16px; }
+.ft-field input { flex: 1; min-width: 0; height: 36px; border: 0; outline: 0; background: none; color: #fff; font-size: 17px; }
+.ft-field input::placeholder { color: rgba(235,235,245,.5); }
+.ft .ft-field input:focus-visible { outline: none; }
+.ft-field:focus-within { box-shadow: 0 0 0 1.5px rgba(10,132,255,.9) inset, 0 8px 24px rgba(0,0,0,.25); }
+.ft-send { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--sys-blue); color: #fff; flex: none;
+  transition: opacity .2s, transform .2s var(--ease); }
+.ft-send:disabled { opacity: 0; transform: scale(.6); pointer-events: none; }
+.ft-send.busy { opacity: .6; }
+
+/* AI suggestion chip */
+.ft-suggest { width: min(100%, 440px); border-radius: 20px; padding: 12px 12px 12px 16px; display: flex; flex-direction: column; gap: 8px;
+  animation: ft-rise .3s var(--ease); }
+.ft-suggest .lbl { display: flex; align-items: center; gap: 6px; font: 600 12px var(--font); color: var(--sys-teal); letter-spacing: .01em; }
+.ft-suggest .body { text-align: left; font: 600 17px/1.3 var(--font); color: #fff; min-height: 22px; }
+.ft-suggest .body.wait { color: var(--label-2); font-weight: 500; font-style: italic; }
+.ft-suggest .row { display: flex; gap: 8px; justify-content: flex-end; }
+.ft-chipbtn { min-height: 36px; padding: 0 16px; border-radius: 18px; font: 600 15px var(--font); background: rgba(255,255,255,.14); color: #fff;
+  display: inline-flex; align-items: center; gap: 6px; }
+.ft-chipbtn.primary { background: var(--sys-blue); }
+.ft-chipbtn.ghost { background: none; color: var(--sys-blue); }
+.ft-x { width: 28px; height: 28px; margin: -6px -4px -6px 0; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,.12); color: var(--label-2); }
+.ft-chipbtn:disabled { opacity: .4; }
+
+/* ---- live captions card (iOS Live Captions look) */
+.ft-caption { position: absolute; z-index: 15; left: 12px; right: 12px; bottom: calc(var(--chrome-h) + var(--safe-b) + 28px); display: flex; flex-direction: column;
+  align-items: center; gap: 8px;
+  pointer-events: none; transition: bottom .3s var(--ease); }
+.ft.chrome-off .ft-caption { bottom: calc(var(--safe-b) + 20px); }
+.ft-cap { width: min(100%, 600px); border-radius: 20px; padding: 10px 16px 13px; background: rgba(22,22,24,.74);
+  backdrop-filter: blur(30px) saturate(180%); -webkit-backdrop-filter: blur(30px) saturate(180%); box-shadow: 0 0 0 .5px rgba(255,255,255,.1) inset;
+  transition: opacity .6s var(--ease), transform .3s var(--ease); animation: ft-rise .3s var(--ease); }
+.ft-cap.fading { opacity: 0; transform: translateY(6px); }
+.ft-cap .lbl { display: flex; align-items: center; gap: 6px; font: 600 12px/1 var(--font); color: var(--label-2); margin-bottom: 6px; letter-spacing: .01em; }
+.ft-cap .lbl svg { width: 15px; height: 15px; }
+.ft-cap-text { font: 700 calc(clamp(20px, 5.6vw, 28px) * var(--cap-scale))/1.25 var(--font); letter-spacing: -0.015em;
+  max-height: calc(2 * 1.25em); overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end; overflow-wrap: anywhere; }
+.ft-cap.partial .ft-cap-text { color: rgba(255,255,255,.72); font-style: italic; font-weight: 600; }
+
+/* signing indicator + "did you sign" picker */
+.ft-signing { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 18px; font: 600 14px var(--font); animation: ft-fade .3s var(--ease); }
+.ft-wave { display: flex; gap: 2px; align-items: center; height: 14px; }
+.ft-wave i { width: 3px; border-radius: 2px; background: var(--sys-teal); animation: ft-bar 1s ease-in-out infinite; }
+.ft-wave i:nth-child(1) { height: 6px; } .ft-wave i:nth-child(2) { height: 12px; animation-delay: .15s; } .ft-wave i:nth-child(3) { height: 8px; animation-delay: .3s; }
+.ft-unsure { width: min(100%, 440px); border-radius: 20px; padding: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; animation: ft-rise .3s var(--ease); }
+.ft-unsure > span { width: 100%; font: 600 13px var(--font); color: var(--label-2); padding-left: 4px; }
+
+/* ---- center overlays: invite card, waiting card, "tap to unmute" */
+.ft-dim { position: absolute; inset: 0; z-index: 8; background: rgba(0,0,0,.42); pointer-events: none; animation: ft-fade .3s var(--ease); }
+.ft-center { position: absolute; z-index: 12; left: 16px; right: 16px; top: 50%; transform: translateY(-50%); display: flex; justify-content: center; pointer-events: none; }
+.ft-card { pointer-events: auto; width: min(100%, 340px); border-radius: 26px; padding: 26px 20px 20px; display: flex; flex-direction: column; align-items: center;
+  gap: 8px; text-align: center; background: rgba(28,28,30,.78); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%);
+  box-shadow: 0 0 0 .5px rgba(255,255,255,.1) inset, 0 20px 60px rgba(0,0,0,.45); animation: ft-pop .4s var(--ease); }
+.ft-card .ft-avatar { width: 64px; height: 64px; font-size: 26px; margin-bottom: 4px; }
+.ft-card h2 { margin: 0; font: 700 22px/1.2 var(--font); letter-spacing: -0.02em; }
+.ft-card p { margin: 0; font: 400 15px/1.35 var(--font); color: var(--label-2); }
+.ft-card .ft-sub { font-size: 13px; margin-top: 4px; }
+.ft-linkfield { width: 100%; margin-top: 8px; min-height: 44px; display: flex; align-items: center; gap: 8px; padding: 0 6px 0 14px; border-radius: 12px;
+  background: rgba(118,118,128,.24); font: 400 15px var(--font); color: var(--label-2); }
+.ft-linkfield span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; user-select: all; -webkit-user-select: all; }
+.ft-linkfield button { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--sys-blue); }
+.ft-bigbtn { width: 100%; min-height: 50px; border-radius: 14px; margin-top: 6px; font: 600 17px var(--font); display: inline-flex; align-items: center; justify-content: center;
+  gap: 8px; background: var(--sys-blue); color: #fff; transition: opacity .2s, transform .15s; }
+.ft-bigbtn:active { opacity: .75; transform: scale(.98); }
+.ft-bigbtn.green { background: var(--sys-green); color: #fff; }
+.ft-bigbtn.gray { background: rgba(118,118,128,.28); color: #fff; }
+.ft-bigbtn.plain { background: none; color: var(--sys-blue); min-height: 44px; margin-top: 0; }
+.ft-bigbtn:disabled { opacity: .45; }
+.ft-spinner { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,.22); border-top-color: #fff; animation: ft-spin .9s linear infinite; }
+.ft-unmute { position: absolute; z-index: 25; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 10px;
+  min-height: 48px; padding: 0 20px; border-radius: 24px; font: 600 16px var(--font); animation: ft-pop .4s var(--ease); }
+
+/* toast + banner under the top pill */
+.ft-toast { position: absolute; z-index: 40; left: 50%; top: calc(var(--safe-t) + var(--top-h) + 20px); transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 22px; font: 600 14px var(--font); white-space: nowrap; max-width: calc(100% - 32px); overflow: hidden; text-overflow: ellipsis;
+  animation: ft-drop .35s var(--ease); pointer-events: none; }
+.ft-toast svg { color: var(--sys-green); }
+.ft-banner { position: absolute; z-index: 19; left: 50%; transform: translateX(-50%); top: calc(var(--safe-t) + var(--top-h) + 20px); width: max-content; max-width: calc(100% - 24px);
+  display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 18px; font: 600 13px/1.3 var(--font); color: #ffd18a; animation: ft-drop .35s var(--ease); }
+
+/* ---- full-screen states: pre-join, permission, full, ended */
+.ft-panel { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  padding: calc(var(--safe-t) + 24px) 24px calc(var(--safe-b) + 24px); text-align: center; background: radial-gradient(120% 70% at 50% 0%, #22252e 0%, #000 70%);
+  animation: ft-fade .3s var(--ease); overflow-y: auto; }
+.ft-panel.over { background: rgba(0,0,0,.55); backdrop-filter: blur(30px); -webkit-backdrop-filter: blur(30px); }
+.ft-panel h2 { margin: 6px 0 0; font: 700 26px/1.15 var(--font); letter-spacing: -0.025em; }
+.ft-panel p { margin: 0; max-width: 340px; font: 400 15px/1.4 var(--font); color: var(--label-2); }
+.ft-panel .ft-actions { width: min(100%, 320px); display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.ft-panel .ft-actions.row { flex-direction: row; }
+.ft-panel .ft-actions.row > * { flex: 1; margin-top: 0; }
+.ft-glyph { width: 72px; height: 72px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,69,58,.16); color: var(--sys-red); margin-bottom: 4px; }
+.ft-glyph.blue { background: rgba(10,132,255,.16); color: var(--sys-blue); }
+.ft-glyph.orange { background: rgba(255,159,10,.16); color: var(--sys-orange); }
+.ft-steps { width: min(100%, 340px); margin: 10px 0 0; padding: 0; list-style: none; border-radius: 14px; background: rgba(118,118,128,.16); text-align: left; counter-reset: s; }
+.ft-steps li { position: relative; padding: 12px 14px 12px 48px; font: 400 15px/1.35 var(--font); color: var(--label); counter-increment: s; }
+.ft-steps li + li { box-shadow: 0 -.5px 0 rgba(84,84,88,.6); }
+.ft-steps li::before { content: counter(s); position: absolute; left: 14px; top: 11px; width: 22px; height: 22px; border-radius: 50%; background: var(--sys-blue);
+  font: 600 13px/22px var(--font); text-align: center; color: #fff; }
+.ft-ended .ft-avatar { width: 96px; height: 96px; font-size: 40px; }
+.ft-ended .dur { font: 400 17px var(--font); color: var(--label-2); font-variant-numeric: tabular-nums; }
+
+/* guest pre-join: own camera behind a bottom card */
+.ft-prejoin { position: absolute; inset: 0; z-index: 30; background: #000; }
+.ft-prejoin video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
+.ft-prejoin .ph { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding-bottom: 260px;
+  background: radial-gradient(120% 70% at 50% 0%, #2a2d36 0%, #000 72%); color: var(--label-2); font: 400 15px var(--font); }
+.ft-prejoin .ph .ft-avatar { width: 112px; height: 112px; font-size: 46px; }
+.ft-joincard { position: absolute; left: 12px; right: 12px; bottom: calc(var(--safe-b) + 16px); margin: 0 auto; width: min(calc(100% - 24px), 420px); border-radius: 28px;
+  padding: 22px 20px 20px; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; animation: ft-rise .45s var(--ease); }
+.ft-joincard .who { font: 400 15px var(--font); color: var(--label-2); }
+.ft-joincard h1 { margin: 0; font: 700 26px/1.15 var(--font); letter-spacing: -0.025em; }
+.ft-joincard .toggles { display: flex; gap: 14px; margin: 10px 0 4px; }
+.ft-joincard .ft-bigbtn { margin-top: 8px; }
+.ft-joincard small { font: 400 13px/1.35 var(--font); color: var(--label-2); margin-top: 4px; }
+
+/* ---- options (iOS action sheet) */
+.ft-scrim { position: absolute; inset: 0; z-index: 50; background: rgba(0,0,0,.4); display: flex; align-items: flex-end; justify-content: center;
+  padding: 0 8px calc(var(--safe-b) + 8px); animation: ft-fade .25s var(--ease); }
+.ft-sheet { width: min(100%, 430px); display: flex; flex-direction: column; gap: 8px; animation: ft-up .38s var(--ease); }
+.ft-group { border-radius: 14px; overflow: hidden; background: rgba(44,44,46,.86); backdrop-filter: blur(40px) saturate(180%); -webkit-backdrop-filter: blur(40px) saturate(180%); }
+.ft-group .head { padding: 14px 16px 10px; font: 600 13px var(--font); color: var(--label-2); text-align: center; box-shadow: 0 .5px 0 rgba(84,84,88,.6); }
+.ft-row { width: 100%; min-height: 56px; display: flex; align-items: center; gap: 12px; padding: 10px 16px; text-align: left; font: 400 17px var(--font); color: #fff; position: relative; }
+.ft-row + .ft-row::before { content: ''; position: absolute; top: 0; left: 16px; right: 0; height: .5px; background: rgba(84,84,88,.6); }
+.ft-row .grow { flex: 1; min-width: 0; }
+.ft-row .grow small { display: block; font-size: 13px; color: var(--label-2); margin-top: 2px; line-height: 1.3; }
+.ft-row .ico { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; flex: none; background: var(--sys-blue); }
+.ft-row .ico.teal { background: #0a9fbf; } .ft-row .ico.indigo { background: var(--sys-indigo); } .ft-row .ico.gray { background: var(--sys-gray2); }
+.ft-row.link { justify-content: center; color: var(--sys-blue); }
+.ft-row.cancel { justify-content: center; font-weight: 600; color: var(--sys-blue); }
+.ft-switch { position: relative; width: 51px; height: 31px; flex: none; }
+.ft-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.ft-switch span { position: absolute; inset: 0; border-radius: 16px; background: rgba(120,120,128,.36); transition: background .25s var(--ease); pointer-events: none; }
+.ft-switch span::after { content: ''; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff;
+  box-shadow: 0 3px 8px rgba(0,0,0,.15); transition: transform .25s var(--ease); }
+.ft-switch input:checked + span { background: var(--sys-green); }
+.ft-switch input:checked + span::after { transform: translateX(20px); }
+.ft-switch input:focus-visible + span { outline: 2px solid var(--sys-blue); outline-offset: 2px; }
+.ft-stepper { display: flex; border-radius: 9px; background: rgba(118,118,128,.24); flex: none; }
+.ft-stepper button { width: 50px; height: 36px; display: grid; place-items: center; font: 600 15px var(--font); }
+.ft-stepper button + button { box-shadow: -.5px 0 0 rgba(84,84,88,.9); }
+.ft-stepper button:disabled { opacity: .35; }
+
+.ft.has-panel .ft-top, .ft.has-panel .ft-bottom, .ft.has-panel .ft-caption, .ft.has-panel .ft-center, .ft.has-panel .ft-dim { display: none; }
+.ft .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+@keyframes ft-fade { from { opacity: 0; } }
+@keyframes ft-rise { from { opacity: 0; transform: translateY(10px); } }
+@keyframes ft-pop { from { opacity: 0; transform: scale(.94); } }
+@keyframes ft-up { from { transform: translateY(100%); } }
+@keyframes ft-drop { from { opacity: 0; transform: translate(-50%, -12px); } }
+@keyframes ft-spin { to { transform: rotate(360deg); } }
+@keyframes ft-bar { 0%, 100% { transform: scaleY(.5); } 50% { transform: scaleY(1.2); } }
+
+/* very small phones (360 wide and below) */
+@media (max-width: 370px) {
+  .ft-capsule { gap: 8px; padding: 8px; }
+  .ft-cbtn { width: 48px; height: 48px; }
+  .ft-pill { padding-right: 14px; }
+  .ft-card { padding: 22px 16px 16px; }
+}
+/* short landscape phones: keep everything visible */
+@media (max-height: 500px) {
+  .ft-card { padding: 14px 16px 14px; gap: 4px; }
+  .ft-card .ft-avatar { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ft *, .ft *::before, .ft *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+</style>
+</head>
+<body>
+<div id="ft" class="ft">
+  <div class="ft-stage" id="stage">
+    <div id="tRemote" class="ft-tile remote big gone camoff">
+      <video id="backdrop" class="ft-backdrop" playsinline autoplay muted aria-hidden="true"></video>
+      <video id="remote" class="main" playsinline autoplay></video>
+      <div class="ft-off"><span class="ft-avatar av-peer" aria-hidden="true"></span><small id="remoteOffText">Connecting…</small></div>
+      <span class="ft-badge" role="img" id="remoteMuted" aria-label="Muted"><i data-icon="micSlash" data-size="16"></i></span>
+    </div>
+    <div id="tSelf" class="ft-tile self big camoff">
+      <video id="local" playsinline autoplay muted></video>
+      <div class="ft-off"><span class="ft-avatar av-me" aria-hidden="true"></span><small id="selfOffText">Camera off</small></div>
+      <div class="ft-mini" id="mini" aria-hidden="true" hidden><span></span></div>
+    </div>
+  </div>
+
+  <div class="ft-dim" id="dim" hidden></div>
+  <div class="ft-center" id="center" hidden><div class="ft-card" id="card" role="dialog" aria-labelledby="cardH"></div></div>
+
+  <button class="ft-unmute ft-material" id="unmute" aria-label="Tap to unmute the call audio" hidden><i data-icon="speaker" data-size="22"></i>Tap to unmute</button>
+
+  <div class="ft-top" id="top">
+    <div class="ft-pill ft-material" role="status" aria-live="polite">
+      <span class="ft-avatar av-peer" aria-hidden="true"></span>
+      <div class="txt"><b id="pillName">Video Call</b><span><i class="ft-dot" id="dot"></i><span id="pillStatus">Starting…</span></span></div>
+    </div>
+    <span class="ft-spacer"></span>
+    <button class="ft-round ft-material" id="shareBtn" aria-label="Copy invite link" hidden><i data-icon="share" data-size="21"></i></button>
+    <button class="ft-round ft-material" id="moreBtn" aria-label="More options" aria-haspopup="dialog"><i data-icon="ellipsis" data-size="22"></i></button>
+  </div>
+
+  <div class="ft-banner ft-material" id="banner" role="alert" hidden><i data-icon="wifiSlash" data-size="18"></i><span>No internet. Reconnecting when it is back.</span></div>
+  <div class="ft-toast ft-material" id="toast" role="status" hidden></div>
+
+  <div class="ft-caption" id="capWrap" aria-live="polite" hidden>
+    <div class="ft-cap" id="cap">
+      <div class="lbl"><i data-icon="captions" data-size="15"></i><span id="capLbl">Live Captions</span></div>
+      <div class="ft-cap-text"><span id="capText"></span></div>
+    </div>
+  </div>
+
+  <div class="ft-bottom" id="bottom">
+    <form class="ft-compose" id="compose" hidden>
+      <label class="ft-field ft-material">
+        <span class="sr">Type a caption</span>
+        <input id="capInput" type="text" placeholder="Type a caption" enterkeyhint="send" autocomplete="off">
+        <button type="submit" class="ft-send" id="capSend" aria-label="Send caption" disabled><i data-icon="arrowUp" data-size="18"></i></button>
+      </label>
+    </form>
+    <div class="ft-capsule ft-material" role="toolbar" aria-label="Call controls">
+      <button class="ft-cbtn" id="muteBtn" aria-label="Mute microphone" aria-pressed="false"><i data-icon="mic" data-size="24"></i></button>
+      <button class="ft-cbtn" id="camBtn" aria-label="Turn camera off" aria-pressed="false"><i data-icon="video" data-size="24"></i></button>
+      <button class="ft-cbtn" id="capsBtn" aria-label="Hide captions" aria-pressed="true"><i data-icon="captions" data-size="24"></i></button>
+      <button class="ft-cbtn end" id="endBtn" aria-label="End call"><i data-icon="phoneDown" data-size="28"></i></button>
+    </div>
+  </div>
+
+  <div class="ft-scrim" id="sheet" hidden>
+    <div class="ft-sheet" role="dialog" aria-label="Call options">
+      <div class="ft-group">
+        <div class="head">Call Options</div>
+        <label class="ft-row">
+          <span class="ico"><i data-icon="captions" data-size="18"></i></span>
+          <span class="grow">Live Captions<small id="capsNote">Shows what they sign or type, over their video.</small></span>
+          <span class="ft-switch"><input type="checkbox" role="switch" id="capsSwitch" checked aria-label="Show live captions"><span></span></span>
+        </label>
+        <div class="ft-row">
+          <span class="ico gray"><i data-icon="textSize" data-size="18"></i></span>
+          <span class="grow">Caption size<small id="sizeNote">Default</small></span>
+          <span class="ft-stepper"><button id="smaller" aria-label="Smaller captions">A−</button><button id="larger" aria-label="Larger captions">A+</button></span>
+        </div>
+        <button class="ft-row" id="copyRow" hidden>
+          <span class="ico teal"><i data-icon="link" data-size="18"></i></span>
+          <span class="grow">Copy invite link<small id="copyRowUrl"></small></span>
+        </button>
+      </div>
+      <div class="ft-group"><button class="ft-row cancel" id="sheetDone">Done</button></div>
+    </div>
+  </div>
+
+  <div class="ft-prejoin" id="prejoin">
+    <video id="preview" playsinline autoplay muted hidden></video>
+    <div class="ph" id="previewPh"><span class="ft-avatar av-me" aria-hidden="true"></span><span id="phText">Your camera turns on when you join.</span></div>
+    <div class="ft-joincard ft-material" role="dialog" aria-labelledby="joinH">
+      <span class="who" id="joinWho">You are invited to a</span>
+      <h1 id="joinH">Video Call</h1>
+      <div class="toggles">
+        <button class="ft-cbtn" id="preMic" aria-label="Join with microphone off" aria-pressed="false"><i data-icon="mic" data-size="24"></i></button>
+        <button class="ft-cbtn" id="preCam" aria-label="Join with camera off" aria-pressed="false"><i data-icon="video" data-size="24"></i></button>
+      </div>
+      <button class="ft-bigbtn green" id="joinBtn"><i data-icon="videoFill" data-size="20"></i><span>Join</span></button>
+      <button class="ft-bigbtn plain" id="joinNoCam">Join without camera</button>
+      <small id="joinNote">Live captions appear over their video. No app or sign-up.</small>
+    </div>
+  </div>
+
+  <div class="ft-panel" id="panel" hidden></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var qs = new URLSearchParams(location.search);
+  var room = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+  var isHost = qs.get('host') === '1';                       // legacy/test host mode: typed captions, invite link
+  var peerName = (qs.get(isHost ? 'to' : 'from') || '').trim().slice(0, 40);
+  var myName = (qs.get('name') || '').trim().slice(0, 40);
+  var cid = (function () { try { return crypto.randomUUID(); } catch (e) { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2); } })();
+  var store = {
+    get: function (k, d) { try { var v = localStorage.getItem('ft.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function (k, v) { try { localStorage.setItem('ft.' + k, JSON.stringify(v)); } catch (e) {} }
+  };
+
+  // ---- icons: same 24-pt line drawings as app/src/sf.tsx (original artwork)
+  var IC = {
+    mic: { d: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M9 21h6"/>' },
+    micSlash: { d: '<path d="M15 9.5V6a3 3 0 0 0-5.8-1M9 9v2a3 3 0 0 0 4.6 2.5M5.5 11a6.5 6.5 0 0 0 10.4 5.2M18.4 12.6c.1-.5.1-1 .1-1.6M12 17.5V21M9 21h6M3.5 3.5l17 17"/>' },
+    video: { d: '<rect x="2.5" y="6" width="13" height="12" rx="3"/><path d="m15.5 10.5 5-3v9l-5-3z"/>' },
+    videoFill: { fill: 1, d: '<rect x="2.5" y="6" width="13" height="12" rx="3"/><path d="m15.5 10.5 5-3v9l-5-3z"/>' },
+    videoSlash: { d: '<path d="M9 6h3.5a3 3 0 0 1 3 3v3M15.5 15a3 3 0 0 1-3 3h-7a3 3 0 0 1-3-3V9a3 3 0 0 1 1.6-2.7M15.5 10.5l5-3v9l-3.4-2M3 3l18 18"/>' },
+    phoneDown: { fill: 1, d: '<path d="M12 8.6c-3.4 0-6.6 1-8.9 2.8-.6.5-.8 1.3-.6 2l.6 1.8c.2.6.9 1 1.5.8l3.1-.9c.5-.1.9-.6.9-1.1v-1.6c0-.3.2-.5.5-.6a11.8 11.8 0 0 1 5.8 0c.3.1.5.3.5.6V14c0 .5.4 1 .9 1.1l3.1.9c.6.2 1.3-.2 1.5-.8l.6-1.8c.2-.7 0-1.5-.6-2-2.3-1.8-5.5-2.8-8.9-2.8z"/>' },
+    captions: { d: '<rect x="2.5" y="5" width="19" height="14" rx="3"/><path d="M10.5 10a2.2 2.2 0 1 0 0 4M17 10a2.2 2.2 0 1 0 0 4"/>' },
+    share: { d: '<path d="M12 15V3.5M8 7.5l4-4 4 4M7.5 10.5H6A1.5 1.5 0 0 0 4.5 12v7.5A1.5 1.5 0 0 0 6 21h12a1.5 1.5 0 0 0 1.5-1.5V12a1.5 1.5 0 0 0-1.5-1.5h-1.5"/>' },
+    ellipsis: { fill: 1, d: '<circle cx="5.5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="18.5" cy="12" r="1.9"/>' },
+    link: { d: '<path d="M10 14a4.5 4.5 0 0 0 6.4 0l3-3A4.5 4.5 0 0 0 13 4.6l-1.2 1.2M14 10a4.5 4.5 0 0 0-6.4 0l-3 3A4.5 4.5 0 0 0 11 19.4l1.2-1.2"/>' },
+    check: { sw: 2.4, d: '<path d="m5 12.5 4.5 4.5L19 7.5"/>' },
+    speaker: { d: '<path d="M4 9.5h3l4.5-4v13L7 14.5H4z"/><path d="M15 9a4 4 0 0 1 0 6M17.7 6.5a7.5 7.5 0 0 1 0 11"/>' },
+    exclamation: { d: '<path d="M10.3 4.2 2.8 17.5A2 2 0 0 0 4.5 20.5h15a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0zM12 9.5v4.5M12 17.2v.1"/>' },
+    wifiSlash: { d: '<path d="M2.5 8.5a14 14 0 0 1 5-2.9M11 5a14 14 0 0 1 10.5 3.5M5.5 11.8a9.5 9.5 0 0 1 4-2M14.8 10a9.5 9.5 0 0 1 3.7 1.8M8.6 15a5 5 0 0 1 6.8 0M12 19h.01M3 3l18 18"/>' },
+    person: { fill: 1, d: '<circle cx="12" cy="8" r="4"/><path d="M4 20.5c.6-4 3.9-6.5 8-6.5s7.4 2.5 8 6.5z"/>' },
+    arrowUp: { sw: 2.4, d: '<path d="M12 19V5M6 11l6-6 6 6"/>' },
+    textSize: { d: '<path d="M5 6.5V5h14v1.5M12 5v14M9.5 19h5"/>' }
+  };
+  function svg(n, size) {
+    var p = IC[n]; size = size || 24;
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" aria-hidden="true" fill="' + (p.fill ? 'currentColor' : 'none') +
+      '" stroke="' + (p.fill ? 'none' : 'currentColor') + '" stroke-width="' + (p.sw || 1.7) + '" stroke-linecap="round" stroke-linejoin="round">' + p.d + '</svg>';
+  }
+  function setIcon(btn, n, size) { var i = btn.querySelector('[data-icon]'); i.setAttribute('data-icon', n); i.innerHTML = svg(n, size || +i.getAttribute('data-size')); }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-icon]'), function (i) { i.style.display = 'contents'; i.innerHTML = svg(i.getAttribute('data-icon'), +i.getAttribute('data-size')); });
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function avatarHTML(name) { var c = (name || '').trim().charAt(0).toUpperCase(); return c ? esc(c) : svg('person', 24); }
+  function fmt(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+    var p = function (n) { return (n < 10 ? '0' : '') + n; };
+    return h ? h + ':' + p(m) + ':' + p(r) : p(m) + ':' + p(r);
+  }
+  var isTouch = function () { return window.matchMedia && matchMedia('(pointer: coarse)').matches; };
+
+  // ---- state
+  var S = {
+    media: 'pending',      // pending | ok | audio | none
+    conn: 'idle',          // idle | waiting | connecting | connected | reconnecting | left | full | ended
+    endedBy: '',           // 'them' | 'me'
+    startedAt: 0, endedFor: 0, hadPeer: false,
+    remote: { video: false, cam: true, mic: true, away: false },
+    muted: false, camOff: false,
+    capsOn: store.get('capsOn', true), capScale: store.get('capScale', 1),
+    swapped: false, corner: 'tr', chromeOn: true, sheet: false, typing: false, needUnmute: false,
+    online: navigator.onLine !== false,
+    aspect: { self: 3 / 4, remote: 3 / 4 }
+  };
+  var SCALES = [0.85, 1, 1.2, 1.45, 1.75];
+  var SRC = { sign: 'Signed', typed: 'Typed', ai: 'AI' };
+  var inviteUrl = location.origin + '/v/' + encodeURIComponent(room) + (myName ? '?from=' + encodeURIComponent(myName) : '');
+
+  var root = $('ft'), stage = $('stage'), tRemote = $('tRemote'), tSelf = $('tSelf');
+  var remoteEl = $('remote'), localEl = $('local'), backdropEl = $('backdrop');
+  var ws = null, pc = null, stream = null, polite = false, stopped = true;
+  var makingOffer = false, ignoreOffer = false, iceServers = [{ urls: 'stun:stun.l.google.com:19302' }];
+  var wsRetry = 0, wsTimer = null, iceTimer = null, fullRetries = 0, joinedOnce = false, tick = null, hideT = null;
+
+  function hasPeer() { return S.conn === 'connecting' || S.conn === 'connected' || S.conn === 'reconnecting'; }
+  function Who() { return peerName || (isHost ? 'They' : 'The host'); }
+  function who() { return peerName || (isHost ? 'them' : 'the host'); }
+
+  // ---------------------------------------------------------------- render
+  function render() {
+    var peer = hasPeer();
+    root.classList.toggle('chrome-off', !S.chromeOn);
+    root.style.setProperty('--cap-scale', S.capScale);
+    Array.prototype.forEach.call(document.querySelectorAll('.av-peer'), function (a) { a.innerHTML = avatarHTML(peerName); });
+    Array.prototype.forEach.call(document.querySelectorAll('.av-me'), function (a) { a.innerHTML = avatarHTML(myName); });
+
+    // tiles
+    var rOff = !S.remote.video || !S.remote.cam || S.remote.away;
+    tRemote.className = 'ft-tile remote ' + (peer ? (S.swapped ? 'pip' : 'big') : 'big gone') + (rOff ? ' camoff' : '') + (S.remote.mic ? '' : ' micoff');
+    tSelf.className = 'ft-tile self ' + (peer && !S.swapped ? 'pip' : 'big') + ((S.media !== 'ok' || S.camOff) ? ' camoff' : '');
+    $('remoteOffText').textContent = !S.remote.video && S.conn !== 'connected' ? 'Connecting…' : S.remote.away ? 'Video paused' : 'Camera off';
+    $('remoteMuted').setAttribute('aria-label', Who() + ' is muted');
+    $('selfOffText').textContent = S.media === 'pending' ? 'Starting camera…' : S.media === 'audio' ? 'Audio only' : S.media === 'none' ? 'No camera' : 'Camera off';
+    setTileRole(tRemote, peer && S.swapped, Who() + "'s video. Tap to make it full screen");
+    setTileRole(tSelf, peer && !S.swapped, 'Your video. Drag to move it, tap to make it full screen');
+
+    // top pill
+    $('pillName').textContent = peerName || 'Video Call';
+    var st = S.media === 'pending' ? 'Starting…'
+      : S.conn === 'connected' && S.startedAt ? fmt(Date.now() - S.startedAt)
+      : S.conn === 'connecting' ? 'Connecting…'
+      : S.conn === 'reconnecting' ? 'Reconnecting…'
+      : S.conn === 'left' ? Who() + ' left'
+      : S.conn === 'waiting' ? 'Waiting for ' + who() + '…' : 'Starting…';
+    $('pillStatus').textContent = st;
+    $('dot').hidden = S.conn === 'connected';
+    $('dot').className = 'ft-dot' + (S.conn === 'left' ? ' bad' : '');
+    $('shareBtn').hidden = !isHost;
+    $('banner').hidden = S.online;
+
+    // center card: waiting / invite / left
+    var showCard = S.conn === 'waiting' || S.conn === 'left';
+    $('dim').hidden = !showCard; $('center').hidden = !showCard;
+    if (showCard) renderCard();
+
+    $('unmute').hidden = !S.needUnmute;
+
+    // controls
+    var mb = $('muteBtn'), cb = $('camBtn'), kb = $('capsBtn');
+    var micOff = S.muted || S.media === 'none';
+    mb.classList.toggle('off', micOff); mb.disabled = S.media === 'none'; mb.setAttribute('aria-pressed', String(S.muted));
+    mb.setAttribute('aria-label', S.muted ? 'Unmute microphone' : 'Mute microphone'); setIcon(mb, micOff ? 'micSlash' : 'mic');
+    var camOff = S.camOff || S.media !== 'ok';
+    cb.classList.toggle('off', camOff); cb.disabled = S.media !== 'ok'; cb.setAttribute('aria-pressed', String(S.camOff));
+    cb.setAttribute('aria-label', S.camOff ? 'Turn camera on' : 'Turn camera off'); setIcon(cb, camOff ? 'videoSlash' : 'video');
+    kb.classList.toggle('off', !S.capsOn); kb.setAttribute('aria-pressed', String(S.capsOn));
+    kb.setAttribute('aria-label', S.capsOn ? 'Hide captions' : 'Show captions');
+    $('compose').hidden = !isHost || S.media === 'pending';
+    $('compose').classList.toggle('keep', S.typing || !!$('capInput').value);
+    $('capsSwitch').checked = S.capsOn;
+    $('sizeNote').textContent = S.capScale === 1 ? 'Default' : Math.round(S.capScale * 100) + '%';
+    $('smaller').disabled = S.capScale <= SCALES[0];
+    $('larger').disabled = S.capScale >= SCALES[SCALES.length - 1];
+    $('sheet').hidden = !S.sheet;
+    $('copyRow').hidden = !isHost;
+    $('copyRowUrl').textContent = inviteUrl.replace(/^https?:\/\//, '');
+    $('capsNote').textContent = isHost ? 'Shows your captions on your screen too.' : 'Shows what ' + who() + ' signs or types, over their video.';
+    renderCaption();
+    layoutPip();
+  }
+  function setTileRole(t, on, label) {
+    if (on) { t.setAttribute('role', 'button'); t.setAttribute('aria-label', label); t.tabIndex = 0; }
+    else { t.removeAttribute('role'); t.removeAttribute('aria-label'); t.removeAttribute('tabindex'); }
+  }
+
+  var cardKey = '';
+  function renderCard() {
+    var key = S.conn + '|' + peerName + '|' + isHost;
+    if (key === cardKey) return;
+    cardKey = key;
+    var h;
+    if (isHost) {
+      h = '<span class="ft-avatar">' + avatarHTML(peerName) + '</span>' +
+        '<h2 id="cardH">' + esc(S.conn === 'left' ? Who() + ' left' : 'Invite ' + (peerName || 'someone')) + '</h2>' +
+        '<p>' + (S.conn === 'left' ? 'Waiting for them to rejoin… You can stay on this screen.' : 'Send this link to start the call.') + '</p>' +
+        '<div class="ft-linkfield"><span title="' + esc(inviteUrl) + '">' + esc(inviteUrl.replace(/^https?:\/\//, '')) + '</span>' +
+        '<button data-act="copy" aria-label="Copy link">' + svg('link', 20) + '</button></div>' +
+        '<button class="ft-bigbtn" data-act="share">' + svg('share', 20) + (canShare() ? 'Share Link' : 'Copy Link') + '</button>' +
+        '<p class="ft-sub">They open it in any browser. No app needed.</p>';
+    } else {
+      h = '<span class="ft-avatar">' + avatarHTML(peerName) + '</span>' +
+        '<h2 id="cardH">' + esc(S.conn === 'left' ? Who() + ' left' : 'Waiting for ' + who() + '…') + '</h2>' +
+        '<p>' + (S.conn === 'left' ? 'Waiting for them to rejoin…' : 'The call starts as soon as they join.') + '</p>' +
+        '<div style="margin:10px 0 2px"><span class="ft-spinner" aria-hidden="true" style="display:block"></span></div>' +
+        '<p class="ft-sub">Keep this page open. Their captions will appear here.</p>';
+    }
+    $('card').innerHTML = h;
+  }
+
+  // ---------------------------------------------------------------- captions
+  var cap = null, capT = [];
+  function showCaption(text, final, src) {
+    capT.forEach(clearTimeout); capT = [];
+    text = String(text || '');
+    if (text.length > 280) text = '…' + text.slice(-280).replace(/^\S*\s/, '');
+    cap = text ? { text: text, final: final, src: src, fading: false } : null;
+    if (cap && final) {
+      capT.push(setTimeout(function () { if (cap) { cap.fading = true; renderCaption(); } }, 5000));
+      capT.push(setTimeout(function () { cap = null; renderCaption(); }, 5650));
+    }
+    renderCaption();
+  }
+  function fitNewest(span, pad) {
+    var box = span.parentElement, node = span.firstChild;
+    if (!box || !node || node.nodeType !== 3) return;
+    var t = node.nodeValue.replace(/^…/, '');
+    for (var i = 0; i < 80 && span.offsetHeight > box.clientHeight - (pad || 0) + 1; i++) {
+      var sp = t.indexOf(' ', 1); if (sp < 0) break;
+      t = t.slice(sp + 1); node.nodeValue = '…' + t;
+    }
+  }
+  function renderCaption() {
+    var c = S.capsOn ? cap : null;
+    var showMain = !!c && $('panel').hidden && $('prejoin').hidden;
+    $('capWrap').hidden = !showMain;
+    if (c) {
+      $('cap').className = 'ft-cap' + (c.final ? '' : ' partial') + (c.fading ? ' fading' : '');
+      $('capText').textContent = c.text;
+      $('capLbl').textContent = 'Live Captions' + (SRC[c.src] ? ' · ' + SRC[c.src] : '');
+      if (showMain) fitNewest($('capText'));
+    }
+    // host mode: also a mini caption on my own picture-in-picture tile
+    var mini = $('mini');
+    mini.hidden = !(isHost && c && hasPeer());
+    if (c) { mini.className = 'ft-mini' + (c.final ? '' : ' partial') + (c.fading ? ' fading' : ''); mini.firstChild.textContent = c.text; if (!mini.hidden) fitNewest(mini.firstChild, 8); }
+  }
+
+  // ---------------------------------------------------------------- toast
+  var toastT = null;
+  function flash(t, ok) {
+    clearTimeout(toastT);
+    var el = $('toast'); el.innerHTML = (ok ? svg('check', 16) : '') + esc(t); el.hidden = false;
+    el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+    toastT = setTimeout(function () { el.hidden = true; }, 2400);
+  }
+
+  // ---------------------------------------------------------------- full-screen panels
+  function panel(html) {
+    var p = $('panel');
+    root.classList.toggle('has-panel', !!html);
+    if (!html) { p.hidden = true; p.innerHTML = ''; renderCaption(); return; }
+    p.innerHTML = html; p.hidden = false; renderCaption();
+    var b = p.querySelector('button'); if (b) try { b.focus({ preventScroll: true }); } catch (e) {}
+  }
+  function deniedPanel() {
+    var ios = /iPhone|iPad|iPod/.test(navigator.userAgent), android = /Android/.test(navigator.userAgent);
+    var step1 = ios ? 'Tap <b>aA</b> in the address bar, then <b>Website Settings</b>.' : android ? 'Tap the lock icon next to the address, then <b>Permissions</b>.' : 'Click the camera or lock icon in the address bar.';
+    panel('<span class="ft-glyph">' + svg('videoSlash', 34) + '</span><h2>Camera and microphone are blocked</h2>' +
+      '<p>' + esc(Who()) + ' will not see or hear you until you allow them. You can still join and read captions.</p>' +
+      '<ol class="ft-steps"><li>' + step1 + '</li><li>Set Camera and Microphone to <b>Allow</b>.</li><li>Come back and tap Try Again.</li></ol>' +
+      '<div class="ft-actions"><button class="ft-bigbtn" data-act="retry">Try Again</button>' +
+      '<button class="ft-bigbtn plain" data-act="nocam">Join without camera</button></div>');
+  }
+  function errorPanel(msg) {
+    panel('<span class="ft-glyph orange">' + svg('exclamation', 34) + '</span><h2>Camera unavailable</h2><p>' + esc(msg) + '</p>' +
+      '<div class="ft-actions"><button class="ft-bigbtn" data-act="retry">Try Again</button>' +
+      '<button class="ft-bigbtn plain" data-act="nocam">Join without camera</button></div>');
+  }
+  function fullPanel() {
+    panel('<span class="ft-glyph orange">' + svg('exclamation', 34) + '</span><h2>This call is full</h2>' +
+      '<p>Only two people can be in a call, and two are already here. If this is your link, close the other tab or window that has it open.</p>' +
+      '<div class="ft-actions"><button class="ft-bigbtn" data-act="rejoin">Try Again</button></div>');
+  }
+  function endedPanel() {
+    var them = S.endedBy === 'them';
+    panel('<span class="ft-avatar">' + avatarHTML(peerName) + '</span><h2>Call ended</h2>' +
+      '<span class="dur">' + (S.endedFor ? fmt(S.endedFor) : 'Not connected') + '</span>' +
+      (them ? '<p>' + esc(Who()) + ' ended the call.</p>' : '') +
+      '<div class="ft-actions row"><button class="ft-bigbtn gray" data-act="close">Close</button>' +
+      '<button class="ft-bigbtn green" data-act="rejoin">' + svg('videoFill', 20) + 'Call again</button></div>' +
+      '<p class="closed-note" hidden>You can close this tab now.</p>');
+    $('panel').classList.add('ft-ended');
+  }
+
+  // ---------------------------------------------------------------- media
+  function acquire() {
+    var audioC = { echoCancellation: true, noiseSuppression: true };
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return Promise.resolve({ kind: 'unsupported' });
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }, audio: audioC })
+      .then(function (s) { return { kind: 'ok', stream: s }; })
+      .catch(function (e) {
+        var n = e && e.name;
+        if (n === 'NotAllowedError' || n === 'SecurityError') return { kind: 'denied' };
+        if (n === 'NotFoundError' || n === 'OverconstrainedError' || n === 'NotReadableError') {
+          return navigator.mediaDevices.getUserMedia({ audio: audioC })
+            .then(function (s) { return { kind: 'audio', stream: s, why: n }; })
+            .catch(function () { return { kind: 'none', why: n }; });
+        }
+        return { kind: 'error', why: n || 'error' };
+      });
+  }
+  function useStream(s, kind) {
+    stream = s || null; S.media = kind;
+    localEl.srcObject = stream;
+    if (stream) {
+      localEl.play().catch(function () {});
+      stream.getAudioTracks().forEach(function (t) { t.enabled = !S.muted; });
+      stream.getVideoTracks().forEach(function (t) { t.enabled = !S.camOff; });
+    }
+  }
+  function stopStream() { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; localEl.srcObject = null; }
+
+  // ---------------------------------------------------------------- WebRTC
+  function send(o) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+  function sendState() {
+    send({ type: 'state', role: isHost ? 'host' : 'guest', name: myName, cam: S.media === 'ok' && !S.camOff, mic: !S.muted && (S.media === 'ok' || S.media === 'audio'), away: document.hidden });
+  }
+  function clearRemote() {
+    remoteEl.srcObject = null; backdropEl.srcObject = null;
+    S.remote = { video: false, cam: true, mic: true, away: false }; S.needUnmute = false;
+  }
+  function newPC() {
+    if (pc) { try { pc.close(); } catch (e) {} }
+    makingOffer = false; ignoreOffer = false;
+    var p = new RTCPeerConnection({ iceServers: iceServers });
+    pc = p;
+    if (stream) stream.getTracks().forEach(function (t) { p.addTrack(t, stream); });
+    if (!stream || !stream.getVideoTracks().length) p.addTransceiver('video', { direction: 'recvonly' });
+    if (!stream || !stream.getAudioTracks().length) p.addTransceiver('audio', { direction: 'recvonly' });
+    p.ontrack = function (e) {
+      var s = e.streams[0] || new MediaStream([e.track]);
+      if (remoteEl.srcObject !== s) { remoteEl.srcObject = s; backdropEl.srcObject = s; }
+      var pr = remoteEl.play();
+      if (pr && pr.catch) pr.catch(function (err) {
+        if (err && err.name === 'NotAllowedError') { remoteEl.muted = true; remoteEl.play().catch(function () {}); S.needUnmute = true; render(); }
+      });
+      backdropEl.play().catch(function () {});
+    };
+    p.onicecandidate = function (e) { if (e.candidate) send({ type: 'ice', candidate: e.candidate }); };
+    p.onnegotiationneeded = function () {
+      makingOffer = true;
+      p.setLocalDescription().then(function () { send({ type: 'offer', description: p.localDescription }); })
+        .catch(function (e) { console.error(e); }).then(function () { makingOffer = false; });
+    };
+    p.onconnectionstatechange = function () {
+      if (stopped || pc !== p) return;
+      var s = p.connectionState;
+      clearTimeout(iceTimer);
+      if (s === 'connected') { S.conn = 'connected'; S.hadPeer = true; if (!S.startedAt) S.startedAt = Date.now(); startTick(); wake(); }
+      else if (s === 'connecting') S.conn = S.conn === 'connected' || S.conn === 'reconnecting' ? 'reconnecting' : 'connecting';
+      else if (s === 'disconnected') { S.conn = 'reconnecting'; iceTimer = setTimeout(function () { if (p.connectionState !== 'connected') try { p.restartIce(); } catch (e) {} }, 3000); }
+      else if (s === 'failed') { S.conn = 'reconnecting'; try { p.restartIce(); } catch (e) {} }
+      render();
+    };
+  }
+  function onSignal(m) {
+    var p = pc; if (!p) return Promise.resolve();
+    if (m.type === 'offer' || m.type === 'answer') {
+      var d = m.description;
+      var collision = d.type === 'offer' && (makingOffer || p.signalingState !== 'stable');
+      ignoreOffer = !polite && collision;
+      if (ignoreOffer) return Promise.resolve();
+      return p.setRemoteDescription(d).then(function () {
+        if (d.type === 'offer') return p.setLocalDescription().then(function () { send({ type: 'answer', description: p.localDescription }); });
+      });
+    }
+    if (m.type === 'ice') return p.addIceCandidate(m.candidate).catch(function (e) { if (!ignoreOffer) console.error(e); });
+    return Promise.resolve();
+  }
+  function peerGone() { clearRemote(); S.swapped = false; S.conn = 'left'; newPC(); render(); }
+
+  function connectWS() {
+    if (stopped) return;
+    clearTimeout(wsTimer);
+    if (ws && ws.readyState <= 1) return;
+    var w = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '/ws/room/' + encodeURIComponent(room) + '?cid=' + encodeURIComponent(cid));
+    ws = w;
+    w.onopen = function () { wsRetry = 0; };
+    w.onmessage = function (ev) {
+      var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+      switch (m.type) {
+        case 'joined':
+          joinedOnce = true; fullRetries = 0; polite = !!m.polite; newPC();
+          if (m.peers < 2) S.conn = (S.conn === 'left' || (S.conn === 'reconnecting' && S.hadPeer)) ? 'left' : 'waiting';
+          else S.conn = S.conn === 'connected' ? 'reconnecting' : 'connecting';
+          sendState(); render(); break;
+        case 'peer-joined':
+          if (S.conn === 'left') flash(Who() + ' rejoined', true);
+          S.conn = S.conn === 'connected' ? 'reconnecting' : 'connecting';
+          clearRemote(); newPC(); sendState(); render(); break;
+        case 'peer-left': peerGone(); break;
+        case 'bye':
+          // The host hanging up ends the call for the guest; a guest leaving keeps the host in the room.
+          if (!isHost && m.role !== 'guest') endCall('them'); else peerGone();
+          break;
+        case 'full':
+          if (joinedOnce && fullRetries++ < 8) { S.conn = 'reconnecting'; render(); break; }
+          stopped = true; S.conn = 'full'; stopStream(); fullPanel(); break;
+        case 'state':
+          if (m.name && !qs.get(isHost ? 'to' : 'from')) peerName = String(m.name).slice(0, 40);
+          S.remote.cam = m.cam !== false; S.remote.mic = m.mic !== false; S.remote.away = !!m.away;
+          cardKey = ''; render(); break;
+        case 'caption':
+          if (!isHost) showCaption(m.text || '', m.final !== false, m.src);
+          break;
+        default: onSignal(m).catch(function (e) { console.error(e); });
+      }
+    };
+    w.onclose = function () {
+      if (stopped || ws !== w) return;
+      if (S.conn !== 'waiting' && S.conn !== 'left') { S.conn = 'reconnecting'; render(); }
+      wsTimer = setTimeout(connectWS, Math.min(800 * Math.pow(1.6, wsRetry++), 8000));
+    };
+  }
+  function reconnectNow() {
+    if (stopped) return;
+    if (!ws || ws.readyState > 1) { wsRetry = 0; connectWS(); }
+    if (pc && (pc.connectionState === 'failed' || pc.connectionState === 'disconnected')) try { pc.restartIce(); } catch (e) {}
+  }
+  function startTick() { if (!tick) tick = setInterval(function () { if (S.conn === 'connected') $('pillStatus').textContent = fmt(Date.now() - S.startedAt); }, 1000); }
+
+  function enterCall() {
+    $('prejoin').hidden = true;
+    panel('');
+    stopped = false; joinedOnce = false; fullRetries = 0;
+    S.conn = 'waiting'; S.startedAt = 0; S.endedFor = 0; S.endedBy = ''; S.swapped = false;
+    clearRemote(); render();
+    fetch('/api/rooms/ice').then(function (r) { return r.ok ? r.json() : null; }).then(function (j) { if (j) iceServers = j; })
+      .catch(function () {}).then(connectWS);
+  }
+  function endCall(by) {
+    if (by === 'me') send({ type: 'bye', role: isHost ? 'host' : 'guest' });
+    stopped = true;
+    clearTimeout(wsTimer); clearTimeout(iceTimer);
+    if (ws) try { ws.close(); } catch (e) {}
+    if (pc) try { pc.close(); } catch (e) {}
+    ws = null; pc = null;
+    stopStream(); clearRemote();
+    S.endedFor = S.startedAt ? Date.now() - S.startedAt : 0;
+    S.endedBy = by; S.conn = 'ended'; S.sheet = false; cap = null;
+    render(); endedPanel();
+  }
+
+  // Join (from a tap, so iOS Safari shows the permission prompt) with fallbacks.
+  var joining = false;
+  function join(noCam) {
+    if (joining) return;
+    joining = true;
+    var jb = $('joinBtn'); jb.disabled = true; jb.querySelector('span').textContent = 'Joining…';
+    var done = function () { joining = false; jb.disabled = false; jb.querySelector('span').textContent = 'Join'; };
+    if (noCam) { stopStream(); useStream(null, 'none'); done(); enterCall(); return; }
+    var p = stream ? Promise.resolve({ kind: S.media, stream: stream }) : acquire();
+    p.then(function (r) {
+      done();
+      if (r.kind === 'ok' || r.kind === 'audio') {
+        useStream(r.stream, r.kind);
+        if (r.kind === 'audio') flash(r.why === 'NotReadableError' ? 'Camera is busy in another app. Audio only.' : 'No camera found. You are on audio only.');
+        enterCall();
+      } else if (r.kind === 'none') { useStream(null, 'none'); flash('No camera or microphone found. You can still read captions.'); enterCall(); }
+      else if (r.kind === 'denied') { $('prejoin').hidden = true; deniedPanel(); }
+      else if (r.kind === 'unsupported') { $('prejoin').hidden = true; errorPanel('This browser cannot use the camera on this page. Open the link in Safari or Chrome (https), or join without camera.'); }
+      else { $('prejoin').hidden = true; errorPanel("Couldn't start the camera (" + r.why + '). Close other apps that use it, then try again.'); }
+    });
+  }
+
+  // ---------------------------------------------------------------- pre-join
+  function renderPrejoin() {
+    $('joinWho').textContent = peerName ? peerName + ' is inviting you to a' : 'You are invited to a';
+    $('joinH').textContent = 'Video Call';
+    var hasCam = stream && stream.getVideoTracks().length && !S.camOff;
+    $('preview').hidden = !hasCam;
+    $('previewPh').hidden = !!hasCam;
+    $('phText').textContent = S.camOff ? 'Camera is off.' : 'Your camera turns on when you join.';
+    var pm = $('preMic'), pcb = $('preCam');
+    pm.classList.toggle('off', S.muted); pm.setAttribute('aria-pressed', String(S.muted)); setIcon(pm, S.muted ? 'micSlash' : 'mic');
+    pm.setAttribute('aria-label', S.muted ? 'Join with microphone on' : 'Join with microphone off');
+    pcb.classList.toggle('off', S.camOff); pcb.setAttribute('aria-pressed', String(S.camOff)); setIcon(pcb, S.camOff ? 'videoSlash' : 'video');
+    pcb.setAttribute('aria-label', S.camOff ? 'Join with camera on' : 'Join with camera off');
+    if (isHost) { $('joinWho').textContent = 'Start a'; $('joinNote').textContent = 'You will get a link to send. Captions you type appear on your video.'; $('joinBtn').querySelector('span').textContent = 'Start'; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) $('joinNote').textContent = 'This browser cannot use the camera here. You can still join to watch and read captions.';
+  }
+  function precheck() {
+    renderPrejoin();
+    // If the camera is already allowed, show the preview right away; otherwise wait for the Join tap.
+    try {
+      navigator.permissions.query({ name: 'camera' }).then(function (st) {
+        if (st.state !== 'granted' || stream) return;
+        acquire().then(function (r) {
+          if ((r.kind === 'ok' || r.kind === 'audio') && !$('prejoin').hidden) { useStream(r.stream, r.kind); $('preview').srcObject = r.stream; $('preview').play().catch(function () {}); renderPrejoin(); }
+          else if (r.stream) r.stream.getTracks().forEach(function (t) { t.stop(); });
+        });
+      }).catch(function () {});
+    } catch (e) {}
+  }
+
+  // ---------------------------------------------------------------- picture-in-picture
+  function pipEl() { return hasPeer() ? (S.swapped ? tRemote : tSelf) : null; }
+  function pipBox(c) {
+    var el = pipEl(); if (!el) return null;
+    var W = stage.clientWidth, H = stage.clientHeight;
+    var a = Math.min(2, Math.max(0.5, S.swapped ? S.aspect.remote : S.aspect.self));
+    var w = W < 600 ? Math.max(96, Math.min(W * 0.28, 150)) : Math.min(W * 0.2, 260);
+    if (a > 1) w = Math.min(w * 1.3, W * 0.42);
+    var h = Math.min(w / a, H * 0.3); w = h * a;
+    var m = 12, top = 12 + 52 + 12, bottom = S.chromeOn ? $('bottom').offsetHeight + 16 + 12 : 16;
+    return { x: c[1] === 'l' ? m : W - w - m, y: c[0] === 't' ? top : Math.max(top, H - h - bottom), w: w, h: h, W: W, H: H };
+  }
+  function layoutPip() {
+    var el = pipEl();
+    [tSelf, tRemote].forEach(function (t) { if (t !== el) { t.style.transform = ''; t.style.width = ''; t.style.height = ''; } });
+    var b = pipBox(S.corner); if (!el || !b) return;
+    el.style.width = b.w + 'px'; el.style.height = b.h + 'px'; el.style.transform = 'translate(' + b.x + 'px,' + b.y + 'px)';
+  }
+  var drag = null;
+  [tSelf, tRemote].forEach(function (t) {
+    t.addEventListener('pointerdown', function (e) {
+      if (t !== pipEl()) return;
+      var b = pipBox(S.corner); if (!b) return;
+      e.stopPropagation(); wake();
+      try { t.setPointerCapture(e.pointerId); } catch (x) {}
+      drag = { id: e.pointerId, sx: e.clientX, sy: e.clientY, x: b.x, y: b.y, moved: false, t: performance.now() };
+    });
+    t.addEventListener('pointermove', function (e) {
+      if (!drag || drag.id !== e.pointerId) return;
+      var dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+      if (!drag.moved && Math.hypot(dx, dy) < 6) return;
+      drag.moved = true; t.classList.add('dragging');
+      t.style.transform = 'translate(' + (drag.x + dx) + 'px,' + (drag.y + dy) + 'px)';
+    });
+    var up = function (e) {
+      if (!drag || drag.id !== e.pointerId) return;
+      var d = drag; drag = null; t.classList.remove('dragging');
+      if (!d.moved) { S.swapped = !S.swapped; render(); return; }
+      var b = pipBox(S.corner); if (!b) return;
+      var k = 1 + 120 / Math.max(16, performance.now() - d.t);
+      var px = d.x + (e.clientX - d.sx) * k + b.w / 2, py = d.y + (e.clientY - d.sy) * k + b.h / 2;
+      S.corner = (py < b.H / 2 ? 't' : 'b') + (px < b.W / 2 ? 'l' : 'r');
+      render();
+    };
+    t.addEventListener('pointerup', up); t.addEventListener('pointercancel', up);
+    t.addEventListener('keydown', function (e) { if ((e.key === 'Enter' || e.key === ' ') && t === pipEl()) { e.preventDefault(); S.swapped = !S.swapped; render(); } });
+  });
+  remoteEl.addEventListener('loadeddata', function () { S.remote.video = true; render(); });
+  remoteEl.addEventListener('resize', function () { if (remoteEl.videoWidth) { S.aspect.remote = remoteEl.videoWidth / remoteEl.videoHeight; layoutPip(); } });
+  localEl.addEventListener('resize', function () { if (localEl.videoWidth) { S.aspect.self = localEl.videoWidth / localEl.videoHeight; layoutPip(); } });
+  window.addEventListener('resize', layoutPip);
+
+  // ---------------------------------------------------------------- chrome auto-hide (4 s, while connected)
+  function busy() { return S.sheet || S.typing || !!$('capInput').value || S.needUnmute; }
+  function wake() {
+    if (!S.chromeOn) { S.chromeOn = true; render(); }
+    clearTimeout(hideT);
+    if (S.conn === 'connected' && !busy()) hideT = setTimeout(function () { if (S.conn === 'connected' && !busy()) { S.chromeOn = false; render(); } }, 4000);
+  }
+  root.addEventListener('pointermove', function (e) { if (e.pointerType === 'mouse') wake(); });
+  root.addEventListener('keydown', wake);
+  root.addEventListener('pointerdown', function (e) {
+    var big = e.target.closest && e.target.closest('.ft-tile.big');
+    if (big && S.conn === 'connected' && S.chromeOn && !busy() && e.pointerType !== 'mouse') { clearTimeout(hideT); S.chromeOn = false; render(); }
+    else wake();
+  });
+
+  // ---------------------------------------------------------------- controls
+  $('muteBtn').onclick = function () { S.muted = !S.muted; if (stream) stream.getAudioTracks().forEach(function (t) { t.enabled = !S.muted; }); sendState(); render(); };
+  $('camBtn').onclick = function () { S.camOff = !S.camOff; if (stream) stream.getVideoTracks().forEach(function (t) { t.enabled = !S.camOff; }); sendState(); render(); };
+  $('capsBtn').onclick = function () { S.capsOn = !S.capsOn; store.set('capsOn', S.capsOn); flash(S.capsOn ? 'Live Captions on' : 'Live Captions off', S.capsOn); render(); };
+  $('endBtn').onclick = function () { endCall('me'); };
+  $('moreBtn').onclick = function () { S.sheet = true; render(); };
+  $('sheetDone').onclick = function () { S.sheet = false; render(); wake(); };
+  $('sheet').onclick = function (e) { if (e.target === this) { S.sheet = false; render(); wake(); } };
+  $('capsSwitch').onchange = function () { S.capsOn = this.checked; store.set('capsOn', S.capsOn); render(); };
+  function step(d) {
+    var i = 0; for (var j = 0; j < SCALES.length; j++) if (SCALES[j] <= S.capScale + 0.001) i = j;
+    S.capScale = SCALES[Math.max(0, Math.min(SCALES.length - 1, i + d))]; store.set('capScale', S.capScale);
+    if (!cap) showCaption('Captions will look like this.', true, '');
+    render();
+  }
+  $('smaller').onclick = function () { step(-1); };
+  $('larger').onclick = function () { step(1); };
+  $('unmute').onclick = function () { remoteEl.muted = false; remoteEl.play().catch(function () {}); S.needUnmute = false; render(); };
+  $('preMic').onclick = function () { S.muted = !S.muted; if (stream) stream.getAudioTracks().forEach(function (t) { t.enabled = !S.muted; }); renderPrejoin(); };
+  $('preCam').onclick = function () { S.camOff = !S.camOff; if (stream) stream.getVideoTracks().forEach(function (t) { t.enabled = !S.camOff; }); renderPrejoin(); };
+  $('joinBtn').onclick = function () { join(false); };
+  $('joinNoCam').onclick = function () { join(true); };
+
+  function canShare() { return typeof navigator.share === 'function' && isTouch(); }
+  function copyLink() {
+    var ok = function () { flash('Link copied', true); };
+    var fallback = function () {
+      try {
+        var ta = document.createElement('textarea'); ta.value = inviteUrl; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select(); var r = document.execCommand('copy'); ta.remove();
+        if (r) ok(); else flash('Press and hold the link to copy it');
+      } catch (e) { flash('Press and hold the link to copy it'); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(inviteUrl).then(ok, fallback); else fallback();
+  }
+  function shareLink() {
+    if (canShare()) {
+      navigator.share({ title: 'Video call', text: myName ? myName + ' is inviting you to a video call' : 'Join my video call', url: inviteUrl })
+        .catch(function (e) { if (!e || e.name !== 'AbortError') copyLink(); });
+    } else copyLink();
+  }
+  $('shareBtn').onclick = shareLink;
+  $('copyRow').onclick = function () { S.sheet = false; render(); copyLink(); };
+  if (isHost) $('shareBtn').setAttribute('aria-label', canShare() ? 'Share invite link' : 'Copy invite link');
+
+  // delegated buttons inside cards/panels
+  document.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-act]'); if (!b) return;
+    var a = b.getAttribute('data-act');
+    if (a === 'copy') copyLink();
+    else if (a === 'share') shareLink();
+    else if (a === 'retry') { panel(''); $('prejoin').hidden = false; renderPrejoin(); join(false); }
+    else if (a === 'nocam') { panel(''); join(true); }
+    else if (a === 'rejoin') { panel(''); $('panel').classList.remove('ft-ended'); stopped = true; $('prejoin').hidden = false; S.conn = 'idle'; render(); precheck(); }
+    else if (a === 'close') { try { window.close(); } catch (x) {} setTimeout(function () { var n = document.querySelector('.closed-note'); if (n) n.hidden = false; }, 300); }
+  });
+
+  // host mode: typed captions (sent exactly)
+  var inp = $('capInput'), lastPartial = 0;
+  function pushCaption(t, final) { showCaption(t, final, 'typed'); send({ type: 'caption', text: t, final: final, src: 'typed' }); }
+  inp.addEventListener('input', function () {
+    $('capSend').disabled = !inp.value.trim();
+    if (!inp.value.trim()) { pushCaption('', false); render(); return; }
+    var now = Date.now(); if (now - lastPartial < 120) return; lastPartial = now;
+    pushCaption(inp.value, false);
+  });
+  inp.addEventListener('focus', function () { S.typing = true; render(); });
+  inp.addEventListener('blur', function () { S.typing = false; render(); wake(); });
+  $('compose').onsubmit = function (e) {
+    e.preventDefault();
+    var t = inp.value.trim(); if (!t) return;
+    pushCaption(t, true); inp.value = ''; $('capSend').disabled = true; render();
+  };
+
+  // ---------------------------------------------------------------- network + tab visibility
+  window.addEventListener('online', function () { S.online = true; render(); reconnectNow(); });
+  window.addEventListener('offline', function () { S.online = false; render(); });
+  document.addEventListener('visibilitychange', function () {
+    sendState();
+    if (!document.hidden) {
+      localEl.play().catch(function () {}); remoteEl.play().catch(function () {}); backdropEl.play().catch(function () {});
+      reconnectNow();
+      if (S.conn === 'connected') $('pillStatus').textContent = fmt(Date.now() - S.startedAt);
+    }
+  });
+  window.addEventListener('pagehide', function () { if (!stopped) send({ type: 'bye', role: isHost ? 'host' : 'guest' }); });
+
+  render();
+  precheck();
+})();
+</script>
+</body>
+</html>

@@ -58,3 +58,5 @@ export type Commands = {
 
 /** Sent once per socket (and again when they change). */
 export type Hello = { type: 'hello'; contacts: Contact[]; voice_id: string | null; intro_style: 'deaf' | 'hoh' | 'nonspeaking' | 'none' }
+
+

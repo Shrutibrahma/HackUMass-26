@@ -3,8 +3,8 @@ import os
 
 os.environ["VALIDATE_TWILIO_SIGNATURE"] = "false"
 os.environ["PUBLIC_URL"] = "https://s2s.test"
-os.environ.pop("TWILIO_ACCOUNT_SID", None)
-os.environ.pop("GEMINI_API_KEY", None)
+os.environ["TWILIO_ACCOUNT_SID"] = ""
+os.environ["GEMINI_API_KEY"] = ""
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -99,3 +99,5 @@ def test_guard_numbers_days_negation():
     assert not translation_guard("See you Sunday.", "Nos vemos el sábado.", ES).ok
     assert not translation_guard("No, thanks.", "Sí, gracias.", ES).ok
     assert not translation_guard("Okay.", "", ES).ok
+
+

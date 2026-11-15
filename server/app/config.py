@@ -3,6 +3,19 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass, field
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+# Process environment always wins. These files are local-development fallbacks only;
+# ``tokens.env`` lives at the repository root and must remain gitignored.
+_HERE = Path(__file__).resolve()
+_FINGERTIP_ROOT = _HERE.parents[2]
+_REPOSITORY_ROOT = _HERE.parents[3]
+for _env_file in (_REPOSITORY_ROOT / ".env", _FINGERTIP_ROOT / ".env", _REPOSITORY_ROOT / "tokens.env"):
+    if _env_file.is_file():
+        load_dotenv(_env_file, override=False)
 
 
 def _bool(name: str, default: bool) -> bool:
@@ -27,7 +40,8 @@ class Settings:
 
     # ElevenLabs voice through ConversationRelay. Format (Twilio docs):
     #   VOICE_ID-MODEL-SPEED_STABILITY_SIMILARITY  (all settings or none)
-    # Default model is flash_v2_5. Expressive models (v3/v4) do not accept speed.
+    # Twilio recommends ElevenLabs v4 for conversational quality and low latency.
+    # v3/v4 settings contain stability + similarity (no speed).
     tts_provider: str = field(default_factory=lambda: os.getenv("TTS_PROVIDER", "ElevenLabs"))
     tts_model: str = field(default_factory=lambda: os.getenv("TTS_MODEL", "flash_v2_5"))
     tts_voice_settings: str = field(default_factory=lambda: os.getenv("TTS_VOICE_SETTINGS", ""))
@@ -96,9 +110,20 @@ class Settings:
         parts = [vid]
         if self.tts_model:
             parts.append(self.tts_model)
-        if self.tts_voice_settings and not self.expressive_tts:
-            parts.append(self.tts_voice_settings)
+        if self.tts_voice_settings:
+            values = self.tts_voice_settings.split("_")
+            # v3/v4 accept stability + similarity; older models accept speed + both.
+            expected = 2 if self.expressive_tts else 3
+            if len(values) == expected:
+                try:
+                    if all(0 <= float(value) <= (2 if i == 0 and expected == 3 else 1)
+                           for i, value in enumerate(values)):
+                        parts.append(self.tts_voice_settings)
+                except ValueError:
+                    pass
         return "-".join(parts)
 
 
 settings = Settings()
+
+

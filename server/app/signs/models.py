@@ -86,8 +86,24 @@ def signbart_input(frames: list[dict]) -> np.ndarray:
     return kp[None].astype(np.float32)
 
 
+# The 76 face points the ISLR 1st-place model reads (lips, nose, eyes). The browser sends only these
+# as "fx" (in this order); the rest stay NaN. Measured on 350 ASL Citizen clips: same top-1 as all 468.
+FACE_KEEP = [0,61,185,40,39,37,267,269,270,409,291,146,91,181,84,17,314,405,321,375,78,191,80,81,82,13,312,311,310,415,95,88,178,87,14,317,402,318,324,308,1,2,98,327,263,249,390,373,374,380,381,382,362,466,388,387,386,385,384,398,33,7,163,144,145,153,154,155,133,246,161,160,159,158,157,173]
+
+
+def _face(frames: list[dict]) -> np.ndarray:
+    out = np.full((len(frames), 468, 3), np.nan, dtype=np.float32)
+    for i, f in enumerate(frames):
+        if f.get("face"):
+            a = np.asarray(f["face"], dtype=np.float32)[:468, :3]
+            out[i, : a.shape[0], : a.shape[1]] = a
+        elif f.get("fx") and len(f["fx"]) == len(FACE_KEEP):
+            out[i, FACE_KEEP, :2] = np.asarray(f["fx"], dtype=np.float32)[:, :2]
+    return out
+
+
 def islr_input(frames: list[dict]) -> np.ndarray:
-    return np.concatenate([_arr(frames, "face", 468, 3, np.nan), _arr(frames, "lh", 21, 3, np.nan),
+    return np.concatenate([_face(frames), _arr(frames, "lh", 21, 3, np.nan),
                            _arr(frames, "pose", 33, 3, np.nan), _arr(frames, "rh", 21, 3, np.nan)], axis=1)
 
 
@@ -97,7 +113,8 @@ def gloss_of(label: str) -> str:
     """'THANK YOU' / 'thankyou' / 'FINE2' / 'want1' -> 'THANK-YOU', 'FINE', 'WANT'."""
     g = re.sub(r"\d+$", "", label.strip()).strip()
     g = re.sub(r"[\s_]+", "-", g).upper()
-    return {"THANKYOU": "THANK-YOU", "PICKUP": "PICK-UP", "HOWMUCH": "HOW-MUCH"}.get(g.replace("-", ""), g)
+    return {"THANKYOU": "THANK-YOU", "PICKUP": "PICK-UP", "HOWMUCH": "HOW-MUCH", "WEUS": "WE", "MINEMY": "MY",
+            "CALLONPHONE": "CALL", "HESHEIT": "HE-SHE", "HAVETO": "HAVE-TO"}.get(g.replace("-", ""), g)
 
 
 @dataclass
@@ -134,8 +151,17 @@ class SignBartModel:
         self.sess = ort.InferenceSession(os.path.join(d, "signbart.onnx"), opts, providers=["CPUExecutionProvider"])
         self.labels = json.load(open(os.path.join(d, "labels.json")))
 
+    def logits(self, frames: list[dict]) -> np.ndarray:
+        return self.sess.run(None, {"keypoints": signbart_input(frames)})[0][0]
+
+    def from_logits(self, logits: np.ndarray, k: int = 5, allowed: Optional[set[str]] = None) -> list[Guess]:
+        if allowed:
+            mask = np.array([gloss_of(l) in allowed for l in self.labels])
+            logits = np.where(mask, logits, -1e9)
+        return _merge(self.labels, _softmax(logits), k)
+
     def predict(self, frames: list[dict], k: int = 5, allowed: Optional[set[str]] = None) -> list[Guess]:
-        logits = self.sess.run(None, {"keypoints": signbart_input(frames)})[0][0]
+        logits = self.logits(frames)
         if allowed:
             mask = np.array([gloss_of(l) in allowed for l in self.labels])
             logits = np.where(mask, logits, -1e9)
@@ -170,3 +196,5 @@ def timed(model, frames: list[dict], **kw) -> tuple[list[Guess], float]:
     t0 = time.perf_counter()
     g = model.predict(frames, **kw)
     return g, (time.perf_counter() - t0) * 1000
+
+

@@ -6,8 +6,8 @@ import os
 import time
 
 os.environ["VALIDATE_TWILIO_SIGNATURE"] = "false"
-os.environ.pop("TWILIO_ACCOUNT_SID", None)
-os.environ.pop("GEMINI_API_KEY", None)
+os.environ["TWILIO_ACCOUNT_SID"] = ""
+os.environ["GEMINI_API_KEY"] = ""
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -234,3 +234,5 @@ def test_video_facts_are_allowed_sources_but_inventions_are_not():
     c, ok, bad, made_up = asyncio.run(go())
     assert c.draft is not None and not c.draft.blocked
     assert not ok.blocked and bad.blocked and made_up.blocked
+
+

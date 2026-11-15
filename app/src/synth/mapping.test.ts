@@ -94,3 +94,5 @@ describe('gesture mapping', () => {
     expect(cutoffFor(0)).toBeGreaterThan(cutoffFor(1) * 10)
   })
 })
+
+

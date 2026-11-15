@@ -9,7 +9,8 @@ import { DEFAULT_QUICK, INTRO } from './data'
 import { AfterCall, Calling, InCall, Incoming } from './screens/Call'
 import { InPerson } from './screens/InPerson'
 import { MeetPanel } from './screens/Meet'
-import { ContactPage, ErrandNote, Home, Settings, VoicePicker, type Prefs } from './screens/Setup'
+import { ErrandNote, type Prefs } from './screens/Setup'
+import { ContactCard, PhoneHome, SettingsIOS, VoicePickerIOS } from './screens/Phone'
 import { ShowPlayer } from './screens/Show'
 import type { Analysis, CallView, Contact, Draft, Line, VideoFact, VideoSection } from './types'
 
@@ -59,14 +60,14 @@ const SECTIONS: VideoSection[] = [
 const live = (c: CallView, extra: Record<string, unknown> = {}) => <InCall call={c} online dispatch={noop} preview {...extra} />
 
 const FRAMES: [string, ReactNode, boolean?][] = [
-  ['1 · First launch: pick your voice', <VoicePicker current={null} onDone={noop} />],
-  ['2 · Home: favorites, recents, talk in person', <Home contacts={CONTACTS} online onOpen={noop} onDial={noop} onInPerson={noop} onSettings={noop}
+  ['1 · First launch: pick your voice', <VoicePickerIOS current={null} first onDone={noop} />],
+  ['2 · Home: favorites, recents, talk in person', <PhoneHome contacts={CONTACTS} online onOpen={noop} onCall={noop} onDial={noop} onSettings={noop} onVideo={noop} onDemo={noop} onAddContact={noop} onClearRecents={noop}
     recents={[
       { id: 'r1', name: 'Mom', number: '', direction: 'incoming', at: Date.now() - 864e5, seconds: 360 },
       { id: 'r2', name: "Tony's Pizza", number: '', direction: 'outgoing', at: Date.now() - 3 * 864e5, seconds: 240 },
       { id: 'r3', name: "Dr. Lee's office", number: '', direction: 'outgoing', at: Date.now() - 4 * 864e5, seconds: 180 },
     ]} />],
-  ['3 · Contact: "Knows I sign" skips the intro', <ContactPage contact={MOM} voiceName="Maya" onChange={noop} onBack={noop} onCall={noop} onVoice={noop} />],
+  ['3 · Contact: "Knows I sign" skips the intro', <ContactCard contact={MOM} voiceName="Maya" langs={null} onChange={noop} onBack={noop} onCall={noop} onVoice={noop} onDelete={noop} />],
   ['4 · Errand call: optional note', <ErrandNote contact={TONY} busy={false} error="" onBack={noop} onCall={noop}
     preview={{ auto_facts: [{ key: 'order', value: 'garlic bread and Honey BBQ wings' }, { key: 'name', value: 'Shruti' }], needs_confirmation: ['tell me the total before ordering'] }} />],
   ['5 · Calling: real progress from the carrier, and what they will hear first', <Calling call={call(TONY, '0:00', { state: 'RINGING', direction: 'outgoing', carrier: 'ringing' })} voiceId="XrExE9yKIg1WjnnlVkGX"
@@ -163,7 +164,7 @@ const FRAMES: [string, ReactNode, boolean?][] = [
 
 function SettingsFrame() {
   const [p, setP] = useState<Prefs>({ quick: DEFAULT_QUICK, capScale: 1.2, introStyle: 'nonspeaking' })
-  return <Settings prefs={p} voiceName="Maya" onChange={setP} onVoice={noop} onBack={noop} />
+  return <SettingsIOS prefs={p} voiceName="Maya" onChange={setP} onVoice={noop} onBack={noop} onMeetings={noop} onPlayground={noop} />
 }
 
 function TypeFrame() {
@@ -188,3 +189,5 @@ export default function Gallery() {
     </div>
   )
 }
+
+

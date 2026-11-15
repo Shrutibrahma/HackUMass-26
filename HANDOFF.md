@@ -129,3 +129,5 @@ through everything, but no phone rings, and that never counts as a pass.
   Playground, InPerson, SignsLab · `sign/` camera worker, segmenter, pipeline · `synth/` gesture logic
 - `model/` SignBart reimplementation, ONNX, vocab · `eval/` bench and results · `extension/` Meet ·
   `bridge/` desktop virtual-mic bridge · `scripts/live_check.py`
+
+

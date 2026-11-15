@@ -220,3 +220,5 @@ export class Aurora {
     g.globalCompositeOperation = 'source-over'
   }
 }
+
+

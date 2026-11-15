@@ -294,3 +294,5 @@ class DuplicateGuard:
 
     def mark(self, text: str) -> None:
         self._recent[normalize_line(text)] = self.clock()
+
+
