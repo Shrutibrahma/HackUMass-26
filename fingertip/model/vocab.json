@@ -509,6 +509,34 @@
  ],
  "conversation_check": "500 ASL Citizen clips (10 per sign, random signers), within the active vocabulary: 98.8% top-1 with the hand setting matching the signer, 93% on Not sure. Clips may overlap SignBart training data. See eval/conversation50.md",
  "islr_conversation": [
+  "DAD",
+  "FINE",
+  "FINISH",
+  "HAVE",
+  "HELLO",
+  "HOME",
+  "HOT",
+  "HUNGRY",
+  "LATER",
+  "LIKE",
+  "MOM",
+  "NO",
+  "NOT",
+  "NOW",
+  "PLEASE",
+  "SAD",
+  "SEE",
+  "THANK-YOU",
+  "THIRSTY",
+  "TOMORROW",
+  "WATER",
+  "WHERE",
+  "WHO",
+  "WHY",
+  "YES"
+ ],
+ "islr_check": "25 signs chosen greedily for separability: 300/300 held-out ASL Citizen clips (not ISLR training data). The 55-sign set is kept as islr_conversation_55 (96.5%).",
+ "islr_conversation_55": [
   "ALL",
   "BAD",
   "BED",
@@ -564,6 +592,5 @@
   "WHY",
   "YES",
   "YESTERDAY"
- ],
- "islr_check": "550 ASL Citizen clips (not ISLR training data: different dataset and signers), 10+ per sign, restricted to these 55: 95.9% top-1. eval/conversation50.md"
+ ]
 }

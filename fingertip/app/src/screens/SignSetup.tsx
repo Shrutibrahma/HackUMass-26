@@ -102,7 +102,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
             <div className="ss-teach" aria-live="polite">
               <div className="ss-teach-word">{pretty(teach)}</div>
               <div className="ss-dots">{Array.from({ length: TIMES }, (_, i) => <span key={i} className={i < got ? 'on' : ''}>{i < got ? <SFCheck size={12} /> : null}</span>)}</div>
-              <div className="ss-teach-sub">Sign it, then lower your hands. {TIMES - got} more.</div>
+              <div className="ss-teach-sub">Sign it, then drop your hands. {TIMES - got} more.</div>
               <button className="ios-link" onClick={() => { setTeach(null); setNote('') }}>Cancel</button>
             </div>
           ) : (
@@ -111,7 +111,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
                 <span key={i} className={`ss-chip ${h.unsure ? 'unsure' : ''}`}>
                   {h.unsure && h.options?.length ? h.options.map(pretty).join(' or ') + '?' : pretty(h.sign)}
                   {h.personal && <em>yours</em>}
-                </span>)) : <span className="ss-empty">Sign anything. Pause briefly between signs.</span>}
+                </span>)) : <span className="ss-empty">One sign at a time: sign it, then drop your hands out of view.</span>}
             </div>
           )}
           {note && <div className="ss-note">{note}</div>}
@@ -139,7 +139,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
         </div>
         <p className="ios-section-f">Sign it {TIMES} times and the app learns your version. Only hand positions are saved, never video.</p>
 
-        <div className="ios-section-h">The {cfg?.conversation.length ?? 55} signs it knows</div>
+        <div className="ios-section-h">The {cfg?.conversation.length ?? 25} signs it knows</div>
         <div className="ios-search"><input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Search" aria-label="Search signs" /></div>
         <div className="ios-group">
           {conv.map((s) => (
@@ -150,6 +150,7 @@ export function SignSetup({ onBack }: { onBack: () => void }) {
             </div>))}
         </div>
         <p className="ios-section-f">ASL, recognised with Google’s MediaPipe sign model (Kaggle ISLR winner). If one keeps coming out wrong, tap “Tune to me” and sign it 3 times. Need a word that isn’t here, like “sorry” or “help”? Teach it above.</p>
+        <p className="ios-section-f" style={{ textAlign: 'center' }}>Sign engine: Google ISLR · one sign per raise · build 25-drop</p>
         <div style={{ height: 28 }} />
       </div>
     </div>

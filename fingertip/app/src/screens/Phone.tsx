@@ -351,7 +351,7 @@ export function SettingsIOS({ prefs, voiceName, onChange, onVoice, onBack, onMee
           <button className="ios-row" onClick={onVoice}><span className="ios-icon-tile" style={{ background: 'var(--sys-indigo)' }}><SFSparkles size={17} /></span>
             <span className="grow">Your voice</span><span className="detail">{voiceName}</span><SFChevronRight size={16} className="chev" /></button>
           <button className="ios-row" onClick={onSigning}><span className="ios-icon-tile" style={{ background: 'var(--sys-orange)' }}><SFHand size={17} /></span>
-            <span className="grow">Signing<span className="sub">Practise the 55 signs, teach your own</span></span><SFChevronRight size={16} className="chev" /></button>
+            <span className="grow">Signing<span className="sub">Practise the 25 signs, teach your own</span></span><SFChevronRight size={16} className="chev" /></button>
         </div>
         <div className="ios-section-h">Caption size</div>
         <div className="ios-group" style={{ padding: 12 }}>

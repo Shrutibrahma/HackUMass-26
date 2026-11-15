@@ -22,13 +22,19 @@ export type SegParams = {
   preMs: number      // lead-in kept before a sign
   restMs: number     // hands down this long = phrase done
   longStillMs: number // hands up but still this long = phrase done
+  /** 'drop' (default): one sign per raise of the hands; lowering them ends the sign. Reliable: it is how
+   *  the model's training clips were recorded. 'pause': split signs on short pauses (faster, less reliable). */
+  split: 'drop' | 'pause'
+  dropMs: number      // hands down this long = this sign is done ('drop')
+  phraseMs: number    // hands down this long = the phrase is done ('drop')
 }
 
 // Measured on a real laptop webcam (5-10 fps): a 220 ms pause cut signs into 3-4 frame pieces the model
 // can't read. A sign now needs a clear pause (~0.45 s) and at least MIN_FRAMES frames before it is cut.
 export const DEFAULTS: SegParams = {
-  vMove: 0.8, vStill: 0.35, stillMs: 450, minSignMs: 400, staticSignMs: 800, maxSignMs: 3000,
+  vMove: 0.8, vStill: 0.35, stillMs: 450, minSignMs: 500, staticSignMs: 800, maxSignMs: 3000,
   preMs: 500, restMs: 500, longStillMs: 1800,
+  split: 'drop', dropMs: 400, phraseMs: 1400,
 }
 const MIN_FRAMES = 8
 
@@ -109,6 +115,7 @@ export class Segmenter {
   }
 
   push(f: Frame): void {
+    if (this.p.split === 'drop') return this.pushDrop(f)
     const prev = this.buf[this.buf.length - 1]
     const v = prev ? motion(prev, f) : 0
     this.speed = prev ? 0.5 * this.speed + 0.5 * v : 0
@@ -153,6 +160,34 @@ export class Segmenter {
         if (down || stillFor >= this.p.longStillMs) this.endPhrase()
         else if (up && this.speed >= this.p.vMove) this.begin(f)
         break
+    }
+  }
+
+  /** One sign per raise: up -> sign -> hands down (dropMs) -> emit. Down for phraseMs -> phrase done. */
+  private pushDrop(f: Frame): void {
+    this.buf.push(f)
+    while (this.buf.length && f.t - this.buf[0].t > this.p.preMs + 50) this.buf.shift()
+    const up = handsUp(f)
+    if (up) this.downSince = -1
+    else if (this.downSince < 0) this.downSince = f.t
+    const downFor = this.downSince >= 0 ? f.t - this.downSince : 0
+    switch (this.mode) {
+      case 'idle':
+      case 'hold':
+        if (up) { this.begin(f); break }
+        if (this.mode === 'hold' && downFor >= this.p.phraseMs) this.endPhrase()
+        break
+      case 'sign': {
+        this.seg.push(f)
+        const dur = f.t - this.segStart
+        if (downFor >= this.p.dropMs || dur >= this.p.maxSignMs) {
+          if (dur >= this.p.minSignMs && this.seg.length >= 4) this.emit()
+          else this.seg = []
+          this.mode = 'hold'
+          if (dur >= this.p.maxSignMs) this.downSince = -1
+        }
+        break
+      }
     }
   }
 

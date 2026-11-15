@@ -59,14 +59,14 @@ def test_teach_recognise_forget(tmp_path):
     # persisted
     assert PersonalSigns(str(tmp_path / "personal.json")).labels() == {"GRANDMA": 3, "MY DOG": 3}
     svc.personal.remove("grandma")
-    assert svc.classify(wave(jitter=0.004, seed=9))["sign"] != "GRANDMA"
+    assert svc.classify(wave(jitter=0.004, seed=9)).get("sign") != "GRANDMA"
 
 
 def test_conversation_vocab_is_active():
     svc = SignService()
     if not svc.ready:
         pytest.skip("sign model not available")
-    assert 50 <= len(svc.conversation) <= 60
+    assert len(svc.conversation) == 25
     assert set(svc.conversation) <= set(svc.active)
     for s in ("HELLO", "THANK-YOU", "YES", "NO", "WHERE", "MOM"):
         assert s in svc.conversation

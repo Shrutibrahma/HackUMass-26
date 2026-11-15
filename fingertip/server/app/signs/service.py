@@ -26,6 +26,9 @@ log = logging.getLogger("signs")
 
 UNSURE_P = float(os.environ.get("SIGN_UNSURE_P", "0.45"))       # tune on held-out data (eval/sign_eval.py)
 UNSURE_MARGIN = float(os.environ.get("SIGN_UNSURE_MARGIN", "0.15"))
+# Below this the segment is noise (hands settling, a scratch), not a sign: say nothing.
+# Real-signer pipeline check: spurious segments scored 0.11-0.29, real signs 0.43+.
+NOISE_P = float(os.environ.get("SIGN_NOISE_P", "0.3"))
 BOOST = 1.6
 # Personal signs (taught by this signer). Calibrated in eval/conversation50.md on real clips
 # taught by one person and signed by others (harder than the same signer):
@@ -135,6 +138,9 @@ class SignService:
                 second, top, unsure, source = top, Guess(pl, ps), True, "personal"
             elif ps >= PERSONAL_MAYBE and pl == top.sign:
                 unsure = False                 # the signer's own examples agree with the model
+        if source == "model" and top.p < NOISE_P:
+            return {"ok": False, "reason": "unclear", "ms": round(ms, 1), "_p": [round(g.p, 3) for g in guesses[:3]],
+                    "_top": [g.sign for g in guesses[:3]]}
         return {"ok": True, "source": source, "sign": top.sign, "unsure": unsure,
                 "options": [top.sign, second.sign] if unsure and second.sign else [top.sign],
                 "ms": round(ms, 1), "_p": [round(g.p, 3) for g in guesses[:3]], "_top": [g.sign for g in guesses[:3]]}

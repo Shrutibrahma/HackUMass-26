@@ -846,6 +846,8 @@ async def signs_classify(body: ClassifyIn, key: Optional[str] = None) -> dict:
     ts = [f.get("t") for f in fr if isinstance(f.get("t"), (int, float))]
     dur = (ts[-1] - ts[0]) / 1000 if len(ts) > 1 else 0.0
     seen = {k: round(sum(1 for f in fr if f.get(k)) / n, 2) for k in ("pose", "lh", "rh", "fx")}
+    if not r.get("ok") and "_top" in r:
+        log.info("sign (noise) top=%s p=%s | %d frames", r.pop("_top"), r.pop("_p"), len(fr))
     if r.get("ok"):
         latency.record("sign_classify_ms", r["ms"])
         log.info("sign %s unsure=%s top=%s p=%s | %d frames %.1fs %.0ffps seen=%s hand=%s", r["sign"], r["unsure"],
